@@ -146,26 +146,35 @@ async function loadDay() {
     hideCalendar();
 
     try {
-        const response = await fetch(`/api/day?date=${date}`);
+        // Add cache-busting parameter to ensure fresh data
+        const timestamp = new Date().getTime();
+        const response = await fetch(`/api/day?date=${date}&_t=${timestamp}`);
         if (!response.ok) {
             const error = await response.json();
             throw new Error(error.detail || 'Failed to load data');
         }
 
         const data = await response.json();
+        console.log(`[LOAD DAY] Received data:`, {
+            date: data.date,
+            therapists: data.therapists?.length || 0,
+            events: data.events?.length || 0
+        });
         currentData = data;
         
         // Show message if no bookings
-        if (data.events.length === 0) {
+        if (!data.events || data.events.length === 0) {
+            console.log(`[LOAD DAY] No events found for ${date}`);
             showNoBookingsMessage(date);
+            hideCalendar();
         } else {
+            console.log(`[LOAD DAY] Rendering ${data.events.length} events`);
             hideNoBookingsMessage();
+            renderCalendar(data);
+            showUnassigned(data.events);
+            showCalendar();
         }
-        
-        renderCalendar(data);
-        showUnassigned(data.events);
         showLoading(false);
-        showCalendar();
         // Wait for calendar to fully render before adding time line
         setTimeout(() => {
             updateCurrentTimeLine();
@@ -216,7 +225,29 @@ function hideCalendar() {
 }
 
 function renderCalendar(data) {
+    console.log(`[RENDER] Starting renderCalendar with:`, {
+        therapists: data.therapists?.length || 0,
+        events: data.events?.length || 0,
+        date: data.date
+    });
+    
+    if (!data || !data.therapists) {
+        console.error(`[RENDER] Invalid data structure:`, data);
+        return;
+    }
+    
+    // Ensure events is an array (can be empty)
+    if (!data.events) {
+        console.warn(`[RENDER] No events array found, using empty array`);
+        data.events = [];
+    }
+    
     const grid = document.getElementById('calendarGrid');
+    if (!grid) {
+        console.error(`[RENDER] Calendar grid element not found!`);
+        return;
+    }
+    
     grid.innerHTML = '';
     
     // Set CSS variable for number of therapists
@@ -275,14 +306,18 @@ function renderCalendar(data) {
             const slotEnd = slotStart + TIME_SLOT_MINUTES * 60 * 1000;
 
             appointments.forEach(appointment => {
-                const eventStart = new Date(appointment.start_at).getTime();
-                const eventEnd = new Date(appointment.end_at).getTime();
-                
-                // Only render if this is the starting slot for the appointment
-                if (eventStart >= slotStart && eventStart < slotEnd) {
-                    const position = appointmentsWithPositions[therapist][appointment.booking_id] || { left: 0, width: 100 };
-                    const block = createAppointmentBlock(appointment, timeSlot, slotIndex, timeSlots, position);
-                    cell.appendChild(block);
+                try {
+                    const eventStart = new Date(appointment.start_at).getTime();
+                    const eventEnd = new Date(appointment.end_at).getTime();
+                    
+                    // Only render if this is the starting slot for the appointment
+                    if (eventStart >= slotStart && eventStart < slotEnd) {
+                        const position = appointmentsWithPositions[therapist][appointment.booking_id] || { left: 0, width: 100 };
+                        const block = createAppointmentBlock(appointment, timeSlot, slotIndex, timeSlots, position);
+                        cell.appendChild(block);
+                    }
+                } catch (error) {
+                    console.error(`[RENDER] Error rendering appointment for ${therapist}:`, appointment, error);
                 }
             });
 
@@ -573,9 +608,13 @@ function createAppointmentBlock(appointment, timeSlot, slotIndex, allTimeSlots, 
                     
                     const result = await response.json();
                     console.log(`[ROOM UPDATE] Success:`, result);
+                    console.log(`[ROOM UPDATE] Reloading calendar...`);
                     
                     // Reload the calendar to show updated assignments
+                    // Use a small delay to ensure server has processed the update
+                    await new Promise(resolve => setTimeout(resolve, 100));
                     await loadDay();
+                    console.log(`[ROOM UPDATE] Calendar reloaded`);
                     
                 } catch (error) {
                     console.error('[ROOM UPDATE] Error:', error);
