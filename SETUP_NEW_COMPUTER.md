@@ -46,7 +46,10 @@ pip install -r requirements.txt
    COUPLES_MASSAGE_SERVICE_NAME_PATTERN=couple
    ```
 
-**Important:** If you don't have Square API credentials yet, the app will work with mock data (test data).
+**Important:** 
+- If you don't have Square API credentials yet, the app will work with mock data (test data)
+- **After editing `.env`, you MUST restart the server** for changes to take effect
+- See `FIX_SQUARE_API_CONNECTION.md` for detailed troubleshooting if you see "Using Mock Data" instead of real data
 
 ## Step 4: Run the Server
 
@@ -100,13 +103,19 @@ The SQLite database (`room_assignments.db`) will be automatically created on fir
 del room_assignments.db
 ```
 
-### Square API Not Working
-If Square API is not configured, the app will automatically use mock data. Check the dashboard - it will show "⚠ Using Mock Data" in the header if Square API is not connected.
+### Square API Not Working (Using Mock Data)
+If the dashboard shows "⚠ Using Mock Data" instead of "✓ Connected to Real Square API":
 
-To verify Square API connection, check:
-- `.env` file exists and has correct credentials
-- Server logs show "Square API: CONNECTED"
-- Dashboard shows "✓ Connected to Real Square API"
+1. **Check `.env` file exists** and contains your Square credentials
+2. **Verify format**: No spaces around `=`, no quotes around values
+3. **Restart the server** after editing `.env` (required!)
+4. **Check server logs** for error messages
+5. **See detailed guide**: `FIX_SQUARE_API_CONNECTION.md` for step-by-step troubleshooting
+
+Quick checks:
+- Server logs should show "Square API: CONNECTED"
+- Dashboard header should show green "✓ Connected to Real Square API" badge
+- If still using mock data after restart, check server logs for specific error messages
 
 ## Verification
 
