@@ -146,35 +146,36 @@ async function loadDay() {
     hideCalendar();
 
     try {
-        // Add cache-busting parameter to ensure fresh data
-        const timestamp = new Date().getTime();
-        const response = await fetch(`/api/day?date=${date}&_t=${timestamp}`);
+        const response = await fetch(`/api/day?date=${date}`);
         if (!response.ok) {
             const error = await response.json();
             throw new Error(error.detail || 'Failed to load data');
         }
 
         const data = await response.json();
-        console.log(`[LOAD DAY] Received data:`, {
+        console.log('[DEBUG] API response:', {
             date: data.date,
-            therapists: data.therapists?.length || 0,
-            events: data.events?.length || 0
+            therapistsCount: data.therapists?.length || 0,
+            eventsCount: data.events?.length || 0,
+            events: data.events
         });
         currentData = data;
         
         // Show message if no bookings
         if (!data.events || data.events.length === 0) {
-            console.log(`[LOAD DAY] No events found for ${date}`);
+            console.log('[DEBUG] No events, showing message');
             showNoBookingsMessage(date);
-            hideCalendar();
+            hideCalendar(); // Hide calendar when no events
         } else {
-            console.log(`[LOAD DAY] Rendering ${data.events.length} events`);
+            console.log(`[DEBUG] Found ${data.events.length} events, calling renderCalendar`);
             hideNoBookingsMessage();
-            renderCalendar(data);
-            showUnassigned(data.events);
-            showCalendar();
         }
+        
+        // Render calendar - this will show therapists and appointments
+        renderCalendar(data);
+        showUnassigned(data.events);
         showLoading(false);
+        showCalendar();
         // Wait for calendar to fully render before adding time line
         setTimeout(() => {
             updateCurrentTimeLine();
@@ -225,36 +226,35 @@ function hideCalendar() {
 }
 
 function renderCalendar(data) {
-    console.log(`[RENDER] Starting renderCalendar with:`, {
-        therapists: data.therapists?.length || 0,
-        events: data.events?.length || 0,
-        date: data.date
+    console.log('[DEBUG renderCalendar] Called with:', {
+        therapistsCount: data.therapists?.length || 0,
+        eventsCount: data.events?.length || 0
     });
-    
-    if (!data || !data.therapists) {
-        console.error(`[RENDER] Invalid data structure:`, data);
-        return;
-    }
-    
-    // Ensure events is an array (can be empty)
-    if (!data.events) {
-        console.warn(`[RENDER] No events array found, using empty array`);
-        data.events = [];
-    }
     
     const grid = document.getElementById('calendarGrid');
     if (!grid) {
-        console.error(`[RENDER] Calendar grid element not found!`);
+        console.error('[DEBUG renderCalendar] Calendar grid not found!');
         return;
     }
     
     grid.innerHTML = '';
     
+    if (!data.therapists || data.therapists.length === 0) {
+        console.warn('[DEBUG renderCalendar] No therapists found');
+        return;
+    }
+    
     // Set CSS variable for number of therapists
     grid.style.setProperty('--num-therapists', data.therapists.length);
 
-    // Generate time slots (15-minute intervals)
-    const timeSlots = generateTimeSlots();
+    // Generate time slots (15-minute intervals) for the selected date
+    const selectedDate = document.getElementById('dateInput')?.value || new Date().toISOString().split('T')[0];
+    console.log('[DEBUG renderCalendar] Selected date:', selectedDate);
+    const timeSlots = generateTimeSlots(selectedDate);
+    console.log('[DEBUG renderCalendar] Generated', timeSlots.length, 'time slots');
+    if (timeSlots.length > 0) {
+        console.log('[DEBUG renderCalendar] First slot:', timeSlots[0].toLocaleString(), 'Last slot:', timeSlots[timeSlots.length - 1].toLocaleString());
+    }
     
     // Create header row
     const headerRow = document.createElement('div');
@@ -275,6 +275,21 @@ function renderCalendar(data) {
     data.therapists.forEach(therapist => {
         appointmentsByTherapist[therapist] = data.events.filter(e => e.therapist === therapist);
     });
+    
+    // Debug: Log all appointments and their times
+    console.log('[DEBUG renderCalendar] All appointments:', data.events.length);
+    if (timeSlots.length > 0) {
+        const firstSlotTime = timeSlots[0].getTime();
+        const lastSlotTime = timeSlots[timeSlots.length - 1].getTime() + TIME_SLOT_MINUTES * 60 * 1000;
+        console.log('[DEBUG renderCalendar] Time slot range:', new Date(firstSlotTime).toLocaleString(), 'to', new Date(lastSlotTime).toLocaleString());
+        
+        data.events.forEach((event, idx) => {
+            const eventStart = new Date(event.start_at);
+            const eventStartTime = eventStart.getTime();
+            const inRange = eventStartTime >= firstSlotTime && eventStartTime < lastSlotTime;
+            console.log(`  ${idx + 1}. ${event.therapist} - ${event.customer}: ${eventStart.toLocaleString()} (${eventStartTime}), In range: ${inRange}, Room: ${event.room}`);
+        });
+    }
 
     // Pre-process appointments to detect overlaps and calculate positions
     // For each therapist, group overlapping appointments
@@ -305,35 +320,59 @@ function renderCalendar(data) {
             const slotStart = timeSlot.getTime();
             const slotEnd = slotStart + TIME_SLOT_MINUTES * 60 * 1000;
 
+            let renderedCount = 0;
             appointments.forEach(appointment => {
-                try {
-                    const eventStart = new Date(appointment.start_at).getTime();
-                    const eventEnd = new Date(appointment.end_at).getTime();
-                    
-                    // Only render if this is the starting slot for the appointment
-                    if (eventStart >= slotStart && eventStart < slotEnd) {
-                        const position = appointmentsWithPositions[therapist][appointment.booking_id] || { left: 0, width: 100 };
-                        const block = createAppointmentBlock(appointment, timeSlot, slotIndex, timeSlots, position);
-                        cell.appendChild(block);
-                    }
-                } catch (error) {
-                    console.error(`[RENDER] Error rendering appointment for ${therapist}:`, appointment, error);
+                const eventStart = new Date(appointment.start_at).getTime();
+                const eventEnd = new Date(appointment.end_at).getTime();
+                
+                // Only render if this is the starting slot for the appointment
+                if (eventStart >= slotStart && eventStart < slotEnd) {
+                    const position = appointmentsWithPositions[therapist][appointment.booking_id] || { left: 0, width: 100 };
+                    const block = createAppointmentBlock(appointment, timeSlot, slotIndex, timeSlots, position);
+                    cell.appendChild(block);
+                    renderedCount++;
+                    console.log(`[DEBUG] Rendered appointment: ${appointment.customer} at slot ${slotIndex} (${new Date(slotStart).toLocaleString()})`);
                 }
             });
+            
+            // Debug: Log unmatched appointments for first slot only
+            if (slotIndex === 0 && appointments.length > 0) {
+                const unmatched = appointments.filter(apt => {
+                    const aptStart = new Date(apt.start_at).getTime();
+                    return !(aptStart >= slotStart && aptStart < slotEnd);
+                });
+                if (unmatched.length > 0) {
+                    console.log(`[DEBUG] Therapist ${therapist}: ${unmatched.length} appointments not in first slot:`, unmatched.map(apt => ({
+                        customer: apt.customer,
+                        start: new Date(apt.start_at).toLocaleString(),
+                        startTime: new Date(apt.start_at).getTime(),
+                        slotStart: slotStart
+                    })));
+                }
+            }
 
             grid.appendChild(cell);
         });
     });
 }
 
-function generateTimeSlots() {
+function generateTimeSlots(dateString) {
     const slots = [];
-    const start = new Date();
-    start.setHours(START_HOUR, 0, 0, 0);
     
-    // End at 11pm (23:00) - include the 11pm slot
-    const end = new Date();
-    end.setHours(23, 0, 0, 0); // 11:00 PM
+    // Handle dateString - use today if not provided or invalid
+    let start, end;
+    if (dateString && dateString.match(/^\d{4}-\d{2}-\d{2}$/)) {
+        // Parse the date string (YYYY-MM-DD) and create date objects for that specific date
+        const [year, month, day] = dateString.split('-').map(Number);
+        start = new Date(year, month - 1, day, START_HOUR, 0, 0, 0);
+        end = new Date(year, month - 1, day, 23, 0, 0, 0); // 11:00 PM
+    } else {
+        // Fallback to original behavior (use today's date)
+        start = new Date();
+        start.setHours(START_HOUR, 0, 0, 0);
+        end = new Date();
+        end.setHours(23, 0, 0, 0); // 11:00 PM
+    }
 
     let current = new Date(start);
     // Generate slots from 9am to 11pm (inclusive of 11pm)
