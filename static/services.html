@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Service Pay Setup - Spa</title>
+    <link rel="stylesheet" href="/static/style.css?v=13">
+    <style>
+        .services-page {
+            --svc-zoom: 1;
+            padding: 6px 16px 24px;
+            max-width: 100%;
+            box-sizing: border-box;
+        }
+        .services-zoom-wrap {
+            zoom: var(--svc-zoom);
+        }
+        /* Firefox: no zoom */
+        @supports not (zoom: 1) {
+            .services-zoom-wrap {
+                zoom: unset;
+                transform: scale(var(--svc-zoom));
+                transform-origin: top left;
+                width: calc(100% / var(--svc-zoom));
+                margin-bottom: 2px;
+            }
+        }
+        .services-container { max-width: 1400px; margin: 0 auto; padding: 0; }
+        .services-container h1 { margin: 0 0 4px; font-size: 1.25rem; }
+        .services-container .subtitle { color: #666; margin-bottom: 8px; font-size: 0.8rem; line-height: 1.35; }
+        .services-toolbar {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 8px 14px;
+            margin-bottom: 8px;
+        }
+        .services-actions { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+        .services-actions button { padding: 4px 10px; border-radius: 4px; cursor: pointer; border: 1px solid #ccc; background: #fff; font-size: 0.8rem; }
+        .services-actions button.primary { background: #007bff; color: white; border-color: #007bff; }
+        .services-actions button.primary:hover { background: #0069d9; }
+        .services-actions button.success { background: #28a745; color: white; border-color: #28a745; }
+        .services-actions button.success:hover { background: #218838; }
+        .services-actions input[type="file"] { margin-left: 2px; font-size: 0.75rem; max-width: 180px; }
+        .services-zoom-control {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.8rem;
+            color: #444;
+            user-select: none;
+        }
+        .services-zoom-control input[type="range"] { width: 120px; vertical-align: middle; }
+        .services-zoom-control .zoom-val { min-width: 3em; font-variant-numeric: tabular-nums; }
+        .services-lang-btn { padding: 4px 10px; border-radius: 4px; cursor: pointer; border: 1px solid #ccc; background: #fff; font-size: 0.8rem; min-width: 3.2em; }
+        .services-lang-btn:hover { background: #f0f0f0; }
+        .services-table-wrap {
+            overflow: auto;
+            max-height: calc(100vh - 120px);
+            border: 1px solid #ccc;
+            border-radius: 4px;
+        }
+        .services-table { width: 100%; border-collapse: collapse; font-size: 0.75rem; }
+        .services-table th, .services-table td { border: 1px solid #ddd; padding: 2px 5px; text-align: left; vertical-align: top; }
+        .services-table th { background: #343a40; color: white; font-weight: 600; position: sticky; top: 0; z-index: 1; font-size: 0.72rem; padding: 4px 5px; }
+        .services-table tr:nth-child(even) { background: #f9f9f9; }
+        .services-table input, .services-table textarea {
+            width: 100%;
+            padding: 2px 4px;
+            box-sizing: border-box;
+            font-size: 0.75rem;
+            font-family: inherit;
+        }
+        .services-table .col-service { min-width: 160px; font-weight: 600; color: #222; }
+        .services-table .col-duration { width: 72px; text-align: center; color: #444; font-weight: 600; background: #f0f4f8; }
+        .services-table .col-price { width: 72px; }
+        .services-table .col-pay { width: 78px; }
+        .services-table .col-providers { min-width: 140px; }
+        .services-table textarea { min-height: 28px; resize: vertical; max-height: 80px; }
+        .services-table .col-service .service-key-text { font-weight: 600; }
+        .services-table .col-service .service-hint { font-size: 0.68rem; color: #666; font-weight: normal; display: block; margin-top: 1px; }
+        .services-table .col-service .service-pay-key-line { font-size: 0.68rem; color: #555; font-weight: normal; display: block; margin-top: 2px; }
+        .services-table .svc-meta-row { display: flex; flex-direction: column; gap: 3px; margin-top: 4px; }
+        .services-table .svc-meta-row input { font-weight: normal; font-size: 0.72rem; }
+        .nav-links { margin-bottom: 12px; }
+        .nav-links a { margin-right: 12px; color: #007bff; text-decoration: none; font-size: 0.85rem; }
+        .nav-links a:hover { text-decoration: underline; }
+    </style>
+</head>
+<body>
+    <div class="services-page" id="servicesPage">
+        <div class="services-zoom-wrap" id="servicesZoomWrap">
+    <div class="services-container">
+        <div class="nav-links">
+            <a href="/">Dashboard</a>
+            <a href="/static/reports.html" target="_blank">Masseuse report</a>
+            <a href="/static/services_report.html" target="_blank">Service summary</a>
+        </div>
+        <h1>Service Pay Setup</h1>
+        <p class="subtitle">Set customer price, provider pay, and who can do each service. When Square is connected, the <strong>main label</strong> uses the same catalog wording as the calendar (plus your language setting). The <strong>pay key</strong> is the substring matched in booking text for pay rates. Optional <strong>Subcategory</strong> / <strong>Service type</strong> help when there is no catalog match or the key is vague.</p>
+        <div class="services-toolbar">
+            <div class="services-actions">
+                <button class="primary" onclick="saveAll()">Save changes</button>
+                <button class="success" onclick="exportCsv()">Download CSV</button>
+                <label>
+                    Import CSV
+                    <input type="file" id="csvFile" accept=".csv" />
+                </label>
+                <button onclick="importCsv()">Upload CSV</button>
+            </div>
+            <div class="services-zoom-control" title="Scale the whole table (works best in Chrome/Edge)">
+                <label for="zoomRange">Zoom</label>
+                <input type="range" id="zoomRange" min="70" max="130" value="100" />
+                <span class="zoom-val" id="zoomVal">100%</span>
+            </div>
+            <button type="button" id="servicesLangBtn" class="services-lang-btn" title="Language (same as dashboard calendar)">EN</button>
+        </div>
+        <p id="statusMsg" style="min-height: 18px; color: #28a745; font-size: 0.8rem;"></p>
+        <div class="services-table-wrap">
+        <table class="services-table">
+            <thead>
+                <tr>
+                    <th class="col-service">Service <span style="font-weight:400;opacity:.85">(calendar + pay key)</span></th>
+                    <th class="col-duration">Duration</th>
+                    <th class="col-price">Price ($)</th>
+                    <th class="col-pay">Provider pay ($)</th>
+                    <th class="col-providers">Providers who can do this</th>
+                </tr>
+            </thead>
+            <tbody id="servicesBody"></tbody>
+        </table>
+        </div>
+    </div>
+        </div>
+    </div>
+    <script src="/static/i18n.js"></script>
+    <script>
+        let servicesData = { services: [], therapists: [] };
+
+        const ZOOM_KEY = 'momServicesPayZoom';
+
+        function applyZoom(pct) {
+            const z = Math.max(70, Math.min(130, pct)) / 100;
+            document.getElementById('servicesPage').style.setProperty('--svc-zoom', String(z));
+            document.getElementById('zoomVal').textContent = Math.round(z * 100) + '%';
+            try { localStorage.setItem(ZOOM_KEY, String(pct)); } catch (e) {}
+        }
+
+        (function initZoom() {
+            const range = document.getElementById('zoomRange');
+            let saved = 100;
+            try { saved = parseInt(localStorage.getItem(ZOOM_KEY), 10) || 100; } catch (e) {}
+            range.value = String(Math.max(70, Math.min(130, saved)));
+            applyZoom(parseInt(range.value, 10));
+            range.addEventListener('input', () => applyZoom(parseInt(range.value, 10)));
+        })();
+
+        function catalogLineDisplay(text) {
+            if (typeof window.MOM_I18N !== 'undefined' && window.MOM_I18N.catalogLine) {
+                return window.MOM_I18N.catalogLine(text);
+            }
+            return text == null ? '' : String(text);
+        }
+
+        function updateServicesLangBtn() {
+            const btn = document.getElementById('servicesLangBtn');
+            if (!btn || typeof window.MOM_I18N === 'undefined') return;
+            const mode = window.MOM_I18N.getMode();
+            btn.textContent = mode === 'zh' ? '中文' : (mode === 'both' ? 'EN·中文' : 'EN');
+            btn.title = 'Language — matches dashboard calendar (' + mode + '). Click to cycle.';
+        }
+
+        (function initServicesLang() {
+            const btn = document.getElementById('servicesLangBtn');
+            if (!btn) return;
+            updateServicesLangBtn();
+            btn.addEventListener('click', function () {
+                if (typeof window.MOM_I18N !== 'undefined' && window.MOM_I18N.cycleMode) {
+                    window.MOM_I18N.cycleMode();
+                    updateServicesLangBtn();
+                    if (servicesData.services && servicesData.services.length) render();
+                }
+            });
+        })();
+
+        async function load() {
+            const res = await fetch('/api/services');
+            if (!res.ok) throw new Error(await res.text());
+            servicesData = await res.json();
+            render();
+        }
+
+        /** True if the whole key is only a duration token (no service type in the key). */
+        function isDurationOnlyKey(key) {
+            if (!key || typeof key !== 'string') return false;
+            const t = key.trim();
+            if (!t) return false;
+            return /^(?:\d+(?:\.\d+)?\s*(?:hr|hrs|hour|hours)\s*|\d+(?:\.\d+)?\s*h\s*|\d+\s*(?:min|minutes?)\s*)$/i.test(t);
+        }
+
+        /** Pull duration text from Square service name (e.g. "60 min", "120 minute couples", "2 hr"). */
+        function extractDurationFromServiceKey(key) {
+            if (!key || typeof key !== 'string') return '—';
+            const t = key.trim();
+            const hr = t.match(/(\d+(?:\.\d+)?)\s*(?:hr|hrs|hour|hours)\b/i);
+            if (hr) return hr[1] + ' hr';
+            const hShort = t.match(/\b(\d+(?:\.\d+)?)\s*h\b/i);
+            if (hShort) return hShort[1] + ' hr';
+            const min = t.match(/(\d+)\s*(?:min|minutes?)\b/i);
+            if (min) return min[1] + ' min';
+            return '—';
+        }
+
+        function serviceDisplayPrimary(s) {
+            const sk = s.service_key || '';
+            const sub = (s.service_subcategory != null ? String(s.service_subcategory) : '').trim();
+            const par = (s.parent_service != null ? String(s.parent_service) : '').trim();
+            const ctx = [sub, par].filter(Boolean).join(' · ');
+            if (ctx) return ctx + ' — ' + sk;
+            return sk;
+        }
+
+        function serviceDisplayHint(s) {
+            const sk = s.service_key || '';
+            if ((s.calendar_display_name || '').trim()) return '';
+            const hasCtx = ((s.service_subcategory || '') + (s.parent_service || '')).trim();
+            if (hasCtx) return '';
+            if (isDurationOnlyKey(sk)) {
+                return 'This pay key is only a length. Add subcategory and/or service type below, or use a longer pay key that matches Square catalog text.';
+            }
+            return '';
+        }
+
+        function serviceMainLabel(s) {
+            const cal = (s.calendar_display_name || '').trim();
+            if (cal) return catalogLineDisplay(cal);
+            return serviceDisplayPrimary(s);
+        }
+
+        function payKeySubtitleHtml(s) {
+            const sk = s.service_key || '';
+            const cal = (s.calendar_display_name || '').trim();
+            if (!cal || !sk) return '';
+            if (cal.toLowerCase() === sk.toLowerCase()) return '';
+            return `<span class="service-pay-key-line">Pay key (substring in bookings): ${escapeHtml(sk)}</span>`;
+        }
+
+        function render() {
+            const tbody = document.getElementById('servicesBody');
+            tbody.innerHTML = '';
+            (servicesData.services || []).forEach(s => {
+                const tr = document.createElement('tr');
+                tr.dataset.id = s.id;
+                tr.dataset.serviceKey = s.service_key || '';
+                const subVal = s.service_subcategory != null ? escapeAttr(s.service_subcategory) : '';
+                const parentVal = s.parent_service != null ? escapeAttr(s.parent_service) : '';
+                const sk = s.service_key || '';
+                const durSource = (s.calendar_display_name || '').trim() || sk;
+                const dur = extractDurationFromServiceKey(durSource);
+                const mainLabel = serviceMainLabel(s);
+                const hint = serviceDisplayHint(s);
+                const hintHtml = hint ? `<span class="service-hint">${escapeHtml(hint)}</span>` : '';
+                const payKeyLine = payKeySubtitleHtml(s);
+                tr.innerHTML = `
+                    <td class="col-service">
+                        <span class="service-key-text">${escapeHtml(mainLabel)}</span>
+                        ${payKeyLine}
+                        ${hintHtml}
+                        <div class="svc-meta-row">
+                            <input type="text" class="input-subcategory" value="${subVal}" placeholder="Subcategory (e.g. Singles, Couples)" />
+                            <input type="text" class="input-parent" value="${parentVal}" placeholder="Service type (e.g. Swedish, Deep tissue)" />
+                        </div>
+                    </td>
+                    <td class="col-duration" title="Parsed from catalog line or pay key">${escapeHtml(dur)}</td>
+                    <td class="col-price"><input type="number" min="0" step="0.01" class="input-price" value="${s.service_price != null ? s.service_price : ''}" placeholder="—" /></td>
+                    <td class="col-pay"><input type="number" min="0" step="0.01" class="input-pay" value="${s.pay_amount != null ? s.pay_amount : ''}" /></td>
+                    <td class="col-providers"><input type="text" class="input-providers" value="${escapeHtml(s.provider_names || '')}" placeholder="e.g. Katy M, May L" /></td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        function escapeHtml(str) {
+            if (str == null) return '';
+            const div = document.createElement('div');
+            div.textContent = str;
+            return div.innerHTML;
+        }
+        function escapeAttr(str) {
+            if (str == null) return '';
+            return String(str).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+        }
+
+        async function saveAll() {
+            const rows = document.querySelectorAll('#servicesBody tr');
+            const updates = [];
+            rows.forEach(tr => {
+                const id = tr.dataset.id;
+                const subInput = tr.querySelector('.input-subcategory');
+                const parentInput = tr.querySelector('.input-parent');
+                const priceInput = tr.querySelector('.input-price');
+                const payInput = tr.querySelector('.input-pay');
+                const provInput = tr.querySelector('.input-providers');
+                const payVal = payInput && payInput.value.trim() !== '' ? parseFloat(payInput.value) : null;
+                if (payVal === null || isNaN(payVal)) return;
+                const priceVal = priceInput && priceInput.value.trim() !== '' ? parseFloat(priceInput.value) : null;
+                const subVal = subInput ? subInput.value.trim() : null;
+                const parentVal = parentInput ? parentInput.value.trim() : null;
+                updates.push({
+                    id: id ? parseInt(id, 10) : null,
+                    service_key: tr.dataset.serviceKey || undefined,
+                    service_subcategory: subVal !== null ? subVal : null,
+                    parent_service: parentVal !== null ? parentVal : null,
+                    service_price: priceVal != null && !isNaN(priceVal) ? priceVal : null,
+                    pay_amount: payVal,
+                    provider_names: provInput ? provInput.value.trim() || null : null
+                });
+            });
+            if (updates.length === 0) {
+                document.getElementById('statusMsg').textContent = 'No rows to save.';
+                return;
+            }
+            try {
+                const res = await fetch('/api/services', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(updates)
+                });
+                if (!res.ok) throw new Error(await res.text());
+                document.getElementById('statusMsg').textContent = 'Saved.';
+                document.getElementById('statusMsg').style.color = '#28a745';
+                setTimeout(() => load(), 400);
+            } catch (e) {
+                document.getElementById('statusMsg').textContent = 'Error: ' + e.message;
+                document.getElementById('statusMsg').style.color = '#dc3545';
+            }
+        }
+
+        function exportCsv() {
+            window.location.href = '/api/services/export';
+        }
+
+        async function importCsv() {
+            const input = document.getElementById('csvFile');
+            if (!input.files || !input.files[0]) {
+                document.getElementById('statusMsg').textContent = 'Choose a CSV file first.';
+                document.getElementById('statusMsg').style.color = '#856404';
+                return;
+            }
+            const form = new FormData();
+            form.append('file', input.files[0]);
+            try {
+                const res = await fetch('/api/services/import', {
+                    method: 'POST',
+                    body: form
+                });
+                if (!res.ok) throw new Error(await res.text());
+                const data = await res.json();
+                document.getElementById('statusMsg').textContent = 'Imported ' + (data.imported || 0) + ' row(s).';
+                document.getElementById('statusMsg').style.color = '#28a745';
+                input.value = '';
+                load();
+            } catch (e) {
+                document.getElementById('statusMsg').textContent = 'Error: ' + e.message;
+                document.getElementById('statusMsg').style.color = '#dc3545';
+            }
+        }
+
+        load();
+    </script>
+</body>
+</html>

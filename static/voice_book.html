@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+    <title>Voice book – Massage on Main</title>
+    <link rel="stylesheet" href="/static/checkin.css" />
+    <style>
+        .voice-book .message { margin-bottom: 0.5rem; }
+        .voice-book .example { font-size: 0.95rem; color: #8ab; margin: 0.5rem 0 1rem; font-style: italic; }
+        .voice-book .btn-speak {
+            margin-top: 1rem;
+            padding: 1rem 2rem;
+            font-size: 1.2rem;
+            font-weight: 600;
+            color: #1a1a2e;
+            background: #90EE90;
+            border: none;
+            border-radius: 12px;
+            cursor: pointer;
+            min-height: 56px;
+        }
+        .voice-book .btn-speak:hover { background: #7acc7a; }
+        .voice-book .btn-speak:disabled { opacity: 0.7; cursor: not-allowed; }
+        .voice-book .result { margin-top: 1rem; padding: 1rem; background: #2d2d44; border-radius: 8px; text-align: left; font-size: 1rem; }
+        .voice-book .heard { color: #aaa; margin-bottom: 0.5rem; }
+    </style>
+</head>
+<body>
+    <div id="kiosk" class="kiosk">
+        <div id="voiceScreen" class="screen screen-checkin voice-book">
+            <p class="message" id="voiceMessage">Say your appointment request</p>
+            <p class="example" id="voiceExample">e.g. "Book me an appointment tonight for 1 hour deep tissue at 8pm"</p>
+            <div id="faceVoice" class="face face-smiley" aria-hidden="true">
+                <svg class="face-svg" viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg">
+                    <circle class="face-head" cx="60" cy="60" r="55" fill="#ffdbac" stroke="#e0b080"/>
+                    <circle class="face-eye" cx="42" cy="52" r="6" fill="#333"/>
+                    <circle class="face-eye" cx="78" cy="52" r="6" fill="#333"/>
+                    <path class="face-mouth face-mouth-talk" d="M 40 72 Q 60 90 80 72" fill="none" stroke="#333" stroke-width="3" stroke-linecap="round"/>
+                </svg>
+            </div>
+            <button type="button" id="btnSpeak" class="btn-speak">Tap to speak</button>
+            <p class="submsg" id="voiceStatus"></p>
+            <div id="voiceResult" class="result" style="display: none;"></div>
+        </div>
+    </div>
+
+    <script>
+    (function () {
+        const btnSpeak = document.getElementById('btnSpeak');
+        const msgEl = document.getElementById('voiceMessage');
+        const statusEl = document.getElementById('voiceStatus');
+        const resultEl = document.getElementById('voiceResult');
+        const faceEl = document.getElementById('faceVoice');
+
+        function setFaceMode(mode) {
+            faceEl.classList.remove('face-talking', 'face-listening');
+            if (mode === 'talk') faceEl.classList.add('face-talking');
+            if (mode === 'listen') faceEl.classList.add('face-listening');
+        }
+
+        function speak(text) {
+            if (!text || !window.speechSynthesis) return;
+            window.speechSynthesis.cancel();
+            const u = new SpeechSynthesisUtterance(text);
+            u.rate = 0.95;
+            u.lang = 'en-US';
+            window.speechSynthesis.speak(u);
+        }
+
+        function getRecognizer() {
+            const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+            if (!SR) return null;
+            const r = new SR();
+            r.lang = 'en-US';
+            r.continuous = false;
+            r.interimResults = false;
+            r.maxAlternatives = 1;
+            return r;
+        }
+
+        async function runVoiceBook() {
+            const rec = getRecognizer();
+            if (!rec) {
+                statusEl.textContent = 'Speech recognition is not supported. Use Chrome or Safari on your phone.';
+                return;
+            }
+
+            btnSpeak.disabled = true;
+            statusEl.textContent = 'Listening…';
+            setFaceMode('listen');
+            resultEl.style.display = 'none';
+
+            const utterance = await new Promise((resolve) => {
+                rec.onresult = (e) => {
+                    const t = (e.results[0] && e.results[0][0]) ? e.results[0][0].transcript : '';
+                    resolve(t.trim());
+                };
+                rec.onerror = (e) => {
+                    if (e.error === 'no-speech') resolve('');
+                    else resolve('');
+                };
+                rec.onend = () => {};
+                rec.start();
+            });
+
+            setFaceMode('');
+            btnSpeak.disabled = false;
+
+            if (!utterance) {
+                statusEl.textContent = 'No speech heard. Try again.';
+                speak('I didn\'t hear anything. Please try again.');
+                return;
+            }
+
+            statusEl.textContent = 'Sending to server…';
+            setFaceMode('talk');
+
+            try {
+                const base = window.location.origin;
+                const res = await fetch(base + '/api/voice-book', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ utterance: utterance }),
+                });
+                const data = await res.json();
+                const message = data.message || (data.success ? 'Your appointment is booked.' : 'Something went wrong.');
+                statusEl.textContent = data.success ? 'Done.' : 'Could not book.';
+                resultEl.style.display = 'block';
+                resultEl.innerHTML = '<div class="heard">You said: ' + escapeHtml(utterance) + '</div><div>' + escapeHtml(message) + '</div>';
+                speak(message);
+            } catch (err) {
+                statusEl.textContent = 'Error. Check connection.';
+                resultEl.style.display = 'block';
+                resultEl.innerHTML = '<div class="heard">You said: ' + escapeHtml(utterance) + '</div><div>Error: ' + escapeHtml(String(err)) + '</div>';
+                speak('There was an error. Please try again.');
+            } finally {
+                setFaceMode('');
+            }
+        }
+
+        function escapeHtml(s) {
+            const div = document.createElement('div');
+            div.textContent = s;
+            return div.innerHTML;
+        }
+
+        if (btnSpeak) {
+            btnSpeak.addEventListener('click', () => {
+                runVoiceBook().catch(e => {
+                    console.error(e);
+                    statusEl.textContent = 'Error. Try again.';
+                    btnSpeak.disabled = false;
+                });
+            });
+        }
+    })();
+    </script>
+</body>
+</html>

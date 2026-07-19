@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Daily Grid Sheet - Spa</title>
+    <link rel="stylesheet" href="/static/style.css?v=13">
+    <style>
+        body { margin: 0; padding: 12px; background: #f5f5f5; font-family: inherit; }
+        .grid-sheet-header { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin-bottom: 12px; }
+        .grid-sheet-header h1 { margin: 0; font-size: 1.25rem; }
+        .grid-sheet-controls { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+        .grid-sheet-controls label { font-weight: 500; }
+        .grid-sheet-controls input[type="date"] { padding: 6px 8px; }
+        .grid-sheet-controls button { padding: 8px 14px; background: #007bff; color: #fff; border: none; border-radius: 6px; cursor: pointer; }
+        .grid-sheet-controls button:hover { background: #0056b3; }
+        .grid-sheet-controls button.print-btn { background: #28a745; }
+        .grid-sheet-controls button.print-btn:hover { background: #218838; }
+        .grid-history-resync-wrap {
+            flex: 1 0 100%;
+            text-align: right;
+            order: 50;
+            margin-top: 2px;
+        }
+        .grid-history-resync-btn {
+            font-size: 10px;
+            color: #9aa0a6;
+            background: transparent;
+            border: 0;
+            padding: 4px 0;
+            cursor: pointer;
+            text-decoration: underline dotted;
+            text-underline-offset: 2px;
+        }
+        .grid-history-resync-btn:hover { color: #6c757d; }
+        .grid-date-nav-btn {
+            width: 32px;
+            height: 32px;
+            padding: 0;
+            font-size: 16px;
+            line-height: 1;
+            background: #e9ecef;
+            color: #333;
+            border: 1px solid #ced4da;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        .grid-date-nav-btn:hover { background: #dee2e6; }
+        .grid-zoom-controls { display: inline-flex; align-items: center; gap: 4px; margin-left: 8px; }
+        .grid-zoom-controls .zoom-btn { width: 32px; height: 32px; padding: 0; font-size: 18px; line-height: 1; background: #e9ecef; color: #333; border: 1px solid #dee2e6; border-radius: 4px; cursor: pointer; }
+        .grid-zoom-controls .zoom-btn:hover { background: #dee2e6; }
+        .grid-zoom-controls .zoom-label { min-width: 42px; font-size: 12px; color: #666; }
+        .grid-sheet-toggle { display: inline-flex; align-items: center; gap: 6px; margin-left: 8px; font-size: 13px; color: #333; cursor: pointer; }
+        .grid-sheet-toggle input { cursor: pointer; }
+        .grid-sheet-zoom-wrapper { transform-origin: top center; transition: transform 0.15s ease-out; width: max-content; max-width: 100%; margin: 0 auto; }
+        .grid-3x3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; max-width: 1400px; margin: 0 auto; }
+        .grid-cell { background: #fff; border: 1px solid #dee2e6; border-radius: 6px; padding: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); min-height: 200px; display: flex; flex-direction: column; }
+        .grid-cell-name { font-weight: bold; font-size: 1rem; margin-bottom: 8px; padding-bottom: 6px; border-bottom: 2px solid #007bff; color: #333; }
+        .grid-cell-name.empty { border-bottom-color: #ddd; color: #999; }
+        .grid-cell-table { width: 100%; border-collapse: collapse; font-size: 11px; flex: 1; }
+        .grid-cell-table th, .grid-cell-table td { border: 1px solid #e9ecef; padding: 3px 4px; text-align: left; }
+        .grid-cell-table th { background: #e9ecef; font-weight: 600; }
+        .grid-cell-table td.num, .grid-cell-table th.col-num { width: 24px; text-align: center; }
+        .grid-cell-table td.pay, .grid-cell-table td.tip, .grid-cell-table th.col-pay, .grid-cell-table th.col-tip { text-align: right; white-space: nowrap; }
+        .grid-cell-table tr:nth-child(even) { background: #f8f9fa; }
+        .grid-cell-table tr.appt-future { background: #e3f2fd !important; }
+        .grid-cell-table tr.appt-future:nth-child(even) { background: #bbdefb !important; }
+        /* Keep Time column on a single line so rows stay compact */
+        .grid-cell-table th:nth-child(5),
+        .grid-cell-table td:nth-child(5) { white-space: nowrap; }
+        #gridContent.loading { padding: 40px; text-align: center; color: #666; }
+        #gridContent.error { padding: 20px; color: #c00; }
+        .print-filters { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: #444; flex-wrap: wrap; }
+        .print-filters-list { display: inline-flex; flex-wrap: wrap; gap: 4px 8px; max-width: 380px; }
+        .print-filters-list label { font-weight: normal; font-size: 11px; white-space: nowrap; }
+        @media print {
+            body { background: #fff; padding: 0; }
+            .grid-sheet-header { margin-bottom: 4px; }
+            .grid-sheet-controls button:not(.print-btn), .grid-zoom-controls, .grid-sheet-toggle, .print-filters { display: none !important; }
+            /* Shrink whole 3x3 grid so all masseuses fit on a single landscape page */
+            .grid-sheet-zoom-wrapper {
+                transform: scale(0.75) !important;
+                transform-origin: top left !important;
+            }
+            .grid-3x3 { gap: 6px; max-width: none; }
+            .grid-cell { box-shadow: none; break-inside: avoid; }
+            .grid-cell.print-hide { display: none !important; }
+            @page { size: landscape; }
+        }
+    </style>
+</head>
+<body>
+    <div class="grid-sheet-header">
+        <h1>Daily Grid Sheet by Masseuse</h1>
+        <div class="grid-sheet-controls">
+            <label for="gridDate">Date:</label>
+            <button type="button" class="grid-date-nav-btn" onclick="shiftGridDate(-1)" title="Previous day">&#9664;</button>
+            <input type="date" id="gridDate" />
+            <button type="button" class="grid-date-nav-btn" onclick="shiftGridDate(1)" title="Next day">&#9654;</button>
+            <button type="button" onclick="loadGrid(false)">Load</button>
+            <label class="grid-sheet-toggle" title="Show only past/current appointments (hide future)">
+                <input type="checkbox" id="onlyShowSoFar" checked />
+                <span>Only show appointments so far</span>
+            </label>
+            <span class="grid-zoom-controls" id="gridZoomControls" style="display: none;">
+                <button type="button" class="zoom-btn" onclick="gridZoomOut()" title="Zoom out">−</button>
+                <button type="button" class="zoom-btn" onclick="gridZoomFit()" title="Fit to screen">Fit</button>
+                <button type="button" class="zoom-btn" onclick="gridZoomIn()" title="Zoom in">+</button>
+                <span id="gridZoomLabel" class="zoom-label">100%</span>
+            </span>
+            <span class="print-filters">
+                <label><input type="checkbox" id="usePrintSelection" /> Print only selected masseuses:</label>
+                <span id="printTherapistFilters" class="print-filters-list"></span>
+            </span>
+            <button type="button" class="print-btn" onclick="printGrid()">Print</button>
+            <span id="gridHistoryResyncWrap" class="grid-history-resync-wrap" style="display: none;">
+                <button type="button" id="gridHistoryResyncBtn" class="grid-history-resync-btn" onclick="gridResyncFromSquare()">Re-fetch from Square…</button>
+            </span>
+        </div>
+    </div>
+    <div id="gridContent">Enter date and click Load.</div>
+
+    <script>
+        function getTodayLocal() {
+            const d = new Date();
+            return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+        }
+
+        function formatDateLocal(d) {
+            if (!(d instanceof Date)) return '';
+            return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+        }
+
+        function addDaysToDate(dateStr, delta) {
+            if (!dateStr) return getTodayLocal();
+            const d = new Date(dateStr + 'T12:00:00');
+            if (Number.isNaN(d.getTime())) return getTodayLocal();
+            d.setDate(d.getDate() + delta);
+            return formatDateLocal(d);
+        }
+
+        /** Same rule as main calendar: dates strictly before local yesterday use saved snapshot unless forced refresh. */
+        function isGridHistoryDay(dateStr) {
+            if (!dateStr || !/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return false;
+            const yesterday = addDaysToDate(getTodayLocal(), -1);
+            return dateStr < yesterday;
+        }
+
+        function gridHistoryStorageKey(dateStr) {
+            return 'mom_day_grid_history_v1:' + dateStr;
+        }
+
+        function getDateFromQuery() {
+            const params = new URLSearchParams(window.location.search);
+            const date = params.get('date');
+            if (date && /^\d{4}-\d{2}-\d{2}$/.test(date)) return date;
+            return getTodayLocal();
+        }
+
+        document.getElementById('gridDate').value = getDateFromQuery();
+        updateGridHistoryResyncVisibility();
+
+        function shiftGridDate(days) {
+            const input = document.getElementById('gridDate');
+            let cur = input.value;
+            if (!cur) cur = getTodayLocal();
+            // Expect YYYY-MM-DD from date input; ensure we use a noon time to avoid timezone edge cases
+            if (!/^\d{4}-\d{2}-\d{2}$/.test(cur)) return;
+            const d = new Date(cur + 'T12:00:00');
+            if (Number.isNaN(d.getTime())) return;
+            d.setDate(d.getDate() + days);
+            // Use ISO date portion (YYYY-MM-DD) so the input definitely accepts it
+            input.value = d.toISOString().slice(0, 10);
+            updateGridHistoryResyncVisibility();
+            loadGrid();
+        }
+
+        function updateGridHistoryResyncVisibility() {
+            const wrap = document.getElementById('gridHistoryResyncWrap');
+            const btn = document.getElementById('gridHistoryResyncBtn');
+            const input = document.getElementById('gridDate');
+            if (!wrap || !btn || !input) return;
+            const date = input.value;
+            if (date && isGridHistoryDay(date)) {
+                wrap.style.display = 'block';
+                btn.title =
+                    'Slow: reloads from the server and replaces the saved grid for this date. Confirm to proceed.';
+            } else {
+                wrap.style.display = 'none';
+            }
+        }
+
+        function gridResyncFromSquare() {
+            const input = document.getElementById('gridDate');
+            const date = input && input.value;
+            if (!date || !isGridHistoryDay(date)) return;
+            if (
+                !confirm(
+                    'Reload this day from the server? This can take a moment and will replace the saved offline copy for the grid.'
+                )
+            ) {
+                return;
+            }
+            loadGrid(true);
+        }
+
+        async function loadGrid(forceFromServer) {
+            const date = document.getElementById('gridDate').value;
+            if (!date) return;
+            const el = document.getElementById('gridContent');
+            const hist = isGridHistoryDay(date);
+            if (!forceFromServer && hist) {
+                try {
+                    const raw = localStorage.getItem(gridHistoryStorageKey(date));
+                    if (raw) {
+                        const data = JSON.parse(raw);
+                        if (data && data.date === date) {
+                            window._gridSheetData = data;
+                            el.className = '';
+                            el.textContent = '';
+                            renderGrid(data);
+                            updateGridHistoryResyncVisibility();
+                            return;
+                        }
+                    }
+                } catch (e) { /* fall through to network */ }
+            }
+            el.className = 'loading';
+            el.textContent = 'Loading...';
+            try {
+                const res = await fetch('/api/day/grid?date=' + encodeURIComponent(date));
+                if (!res.ok) {
+                    const err = await res.json().catch(() => ({}));
+                    throw new Error(err.detail || res.statusText || 'Failed to load');
+                }
+                const data = await res.json();
+                window._gridSheetData = data;
+                if (hist) {
+                    try {
+                        localStorage.setItem(gridHistoryStorageKey(date), JSON.stringify(data));
+                    } catch (e2) { console.warn('Grid history save failed', e2); }
+                }
+                renderGrid(data);
+            } catch (e) {
+                el.className = 'error';
+                el.textContent = 'Error: ' + e.message;
+            }
+            updateGridHistoryResyncVisibility();
+        }
+
+        function formatMoney(n) {
+            if (n == null || n === '') return '—';
+            const num = Number(n);
+            if (Number.isNaN(num)) return '—';
+            return '$' + num.toFixed(2);
+        }
+
+        function updatePrintTherapistFilters(names) {
+            const container = document.getElementById('printTherapistFilters');
+            if (!container) return;
+            container.innerHTML = '';
+            const unique = Array.from(new Set((names || []).filter(Boolean)));
+            unique.forEach(name => {
+                const id = 'printTh_' + name.replace(/\s+/g, '_');
+                const label = document.createElement('label');
+                label.htmlFor = id;
+                label.innerHTML = '<input type="checkbox" class="print-th-checkbox" id="' + id + '" value="' + name.replace(/"/g, '&quot;') + '" checked /> ' + name;
+                container.appendChild(label);
+            });
+        }
+
+        function renderGrid(data) {
+            const el = document.getElementById('gridContent');
+            el.className = '';
+            el.innerHTML = '';
+
+            const onlyShowSoFar = document.getElementById('onlyShowSoFar').checked;
+            const wrapper = document.createElement('div');
+            wrapper.className = 'grid-sheet-zoom-wrapper';
+
+            const grid = document.createElement('div');
+            grid.className = 'grid-3x3';
+
+            const therapists = (data.therapists || []).map(function (th) {
+                const appointments = (th.appointments || []).filter(function (row) {
+                    if (!onlyShowSoFar) return true;
+                    return !row.is_future;
+                });
+                return { name: th.name, appointments: appointments };
+            });
+            updatePrintTherapistFilters((data.therapists || []).map(th => th.name));
+            while (therapists.length < 9) therapists.push({ name: '', appointments: [] });
+            const dateLabel = data.date ? new Date(data.date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }) : '';
+
+            if (dateLabel) {
+                const caption = document.createElement('p');
+                caption.style.cssText = 'margin-top:8px;margin-bottom:8px;color:#666;font-size:14px;';
+                caption.textContent = dateLabel;
+                wrapper.appendChild(caption);
+            }
+
+            for (let i = 0; i < 9; i++) {
+                const cell = document.createElement('div');
+                cell.className = 'grid-cell';
+                const th = therapists[i] || { name: '', appointments: [] };
+                const nameEl = document.createElement('div');
+                nameEl.className = 'grid-cell-name' + (th.name ? '' : ' empty');
+                nameEl.textContent = th.name || '—';
+                cell.appendChild(nameEl);
+
+                const table = document.createElement('table');
+                table.className = 'grid-cell-table';
+                table.innerHTML = '<thead><tr><th class="col-num">#</th><th>Customer</th><th>Service</th><th>Room</th><th>Time</th><th class="col-pay">Pay</th><th class="col-tip">Tip</th></tr></thead><tbody></tbody>';
+                const tbody = table.querySelector('tbody');
+                (th.appointments || []).forEach(function (row) {
+                    const tr = document.createElement('tr');
+                    if (row.is_future) tr.classList.add('appt-future');
+                    tr.innerHTML =
+                        '<td class="num">' + (row.appt_num != null ? row.appt_num : '') + '</td>' +
+                        '<td>' + (row.customer != null ? escapeHtml(row.customer) : '') + '</td>' +
+                        '<td>' + (row.service != null ? escapeHtml(String(row.service)) : '') + '</td>' +
+                        '<td>' + (row.room != null ? escapeHtml(String(row.room)) : '') + '</td>' +
+                        '<td>' + (row.time_frame != null ? escapeHtml(row.time_frame) : '') + '</td>' +
+                        '<td class="pay">' + formatMoney(row.pay) + '</td>' +
+                        '<td class="tip">' + formatMoney(row.tip) + '</td>';
+                    tbody.appendChild(tr);
+                });
+                cell.appendChild(table);
+                grid.appendChild(cell);
+            }
+
+            wrapper.appendChild(grid);
+            el.appendChild(wrapper);
+
+            document.getElementById('gridZoomControls').style.display = 'inline-flex';
+            applyGridZoom(1);
+            fitGridToScreen();
+        }
+
+        document.getElementById('onlyShowSoFar').addEventListener('change', function () {
+            if (window._gridSheetData) renderGrid(window._gridSheetData);
+        });
+
+        function escapeHtml(str) {
+            if (str == null) return '';
+            const div = document.createElement('div');
+            div.textContent = str;
+            return div.innerHTML;
+        }
+
+        let gridZoom = 1;
+        const GRID_ZOOM_MIN = 0.25;
+        const GRID_ZOOM_MAX = 2;
+
+        function getGridZoomWrapper() {
+            return document.getElementById('gridContent').querySelector('.grid-sheet-zoom-wrapper');
+        }
+
+        function applyGridZoom(zoom) {
+            gridZoom = Math.max(GRID_ZOOM_MIN, Math.min(GRID_ZOOM_MAX, zoom));
+            const wrapper = getGridZoomWrapper();
+            if (wrapper) {
+                wrapper.style.transform = 'scale(' + gridZoom + ')';
+            }
+            const label = document.getElementById('gridZoomLabel');
+            if (label) label.textContent = Math.round(gridZoom * 100) + '%';
+        }
+
+        function gridZoomIn() {
+            applyGridZoom(gridZoom * 1.25);
+        }
+
+        function gridZoomOut() {
+            applyGridZoom(gridZoom * 0.8);
+        }
+
+        function gridZoomFit() {
+            const wrapper = getGridZoomWrapper();
+            if (!wrapper) return;
+            const header = document.querySelector('.grid-sheet-header');
+            const headerHeight = header ? header.getBoundingClientRect().height + 24 : 80;
+            const padding = 24;
+            const availableW = window.innerWidth - padding;
+            const availableH = window.innerHeight - headerHeight - padding;
+            const w = wrapper.scrollWidth;
+            const h = wrapper.scrollHeight;
+            if (w <= 0 || h <= 0) return;
+            const scale = Math.min(availableW / w, availableH / h);
+            applyGridZoom(Math.min(scale, 1.5));
+        }
+
+        function fitGridToScreen() {
+            const wrapper = getGridZoomWrapper();
+            if (!wrapper) return;
+            requestAnimationFrame(function () {
+                gridZoomFit();
+            });
+        }
+
+        const gridDateInput = document.getElementById('gridDate');
+        gridDateInput.addEventListener('change', () => {
+            loadGrid();
+        });
+        gridDateInput.addEventListener('keyup', (e) => {
+            if (e.key === 'Enter') loadGrid();
+        });
+
+        // Always load the currently selected date on initial open
+        loadGrid();
+
+        function printGrid() {
+            const onlySelected = document.getElementById('usePrintSelection')?.checked;
+            const container = document.getElementById('gridContent');
+            if (!container) {
+                window.print();
+                return;
+            }
+            let hidden = [];
+            if (onlySelected) {
+                const selectedNames = Array.from(document.querySelectorAll('.print-th-checkbox:checked')).map(cb => cb.value.trim());
+                const cells = container.querySelectorAll('.grid-cell');
+                cells.forEach(cell => {
+                    const nameEl = cell.querySelector('.grid-cell-name');
+                    const name = nameEl ? nameEl.textContent.trim() : '';
+                    if (name && selectedNames.length && !selectedNames.includes(name)) {
+                        cell.classList.add('print-hide');
+                        hidden.push(cell);
+                    }
+                });
+            }
+            window.print();
+            hidden.forEach(cell => cell.classList.remove('print-hide'));
+        }
+    </script>
+</body>
+</html>

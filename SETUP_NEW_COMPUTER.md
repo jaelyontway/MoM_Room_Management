@@ -6,23 +6,6 @@
 - Git installed
 - Internet connection
 
-## Step 1: Clone the Repository
-
-```bash
-git clone https://github.com/jaelyontway/MoM_Room_Management.git
-cd MoM_Room_Management
-```
-
-Or if you already have the repo:
-```bash
-cd MoM_Room_Management
-git pull origin main
-```
-
-## Step 2: Install Python Dependencies
-
-```bash
-pip install -r requirements.txt
 ```
 
 **Note:** On some systems, you may need to use:
@@ -50,6 +33,8 @@ pip install -r requirements.txt
 - If you don't have Square API credentials yet, the app will work with mock data (test data)
 - **After editing `.env`, you MUST restart the server** for changes to take effect
 - See `FIX_SQUARE_API_CONNECTION.md` for detailed troubleshooting if you see "Using Mock Data" instead of real data
+
+**Customer visit count (real Square only):** The calendar reads a **number** custom attribute on the Square customer profile (attribute keys tried: `visits`, `visit_count`, or `Visits`). That value drives the **1stV** badge when it is `1` and **LOYAL** + gold name when it is **20 or more**. Mock bookings do not include this field.
 
 ## Step 4: Run the Server
 

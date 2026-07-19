@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Service Summary Report - Spa</title>
+    <link rel="stylesheet" href="/static/style.css?v=11">
+    <style>
+        .report-container { max-width: 1100px; margin: 20px auto; padding: 20px; }
+        .report-controls { margin-bottom: 20px; display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+        .report-controls .range { display: flex; align-items: center; gap: 6px; }
+        .report-table { width: 100%; border-collapse: collapse; margin-top: 15px; }
+        .report-table th, .report-table td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        .report-table th { background: #007bff; color: white; }
+        .report-table tr:nth-child(even) { background: #f9f9f9; }
+        .report-table .total-row { font-weight: bold; background: #e7f3ff; }
+        .nav-links { margin-bottom: 12px; }
+        .nav-links a { margin-right: 12px; color: #007bff; text-decoration: none; }
+        .nav-links a:hover { text-decoration: underline; }
+        .csv-btn { padding: 8px 16px; background: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer; }
+        .csv-btn:hover { background: #218838; }
+    </style>
+</head>
+<body>
+    <div class="report-container">
+        <div class="nav-links">
+            <a href="/">Dashboard</a>
+            <a href="/static/reports.html" target="_blank">Masseuse report</a>
+        </div>
+        <h1>Service Summary Report</h1>
+        <p style="color:#666;">Shows how many of each service were done and total provider pay for the range.</p>
+        <div class="report-controls">
+            <div class="range">
+                <label for="reportStartDate">From:</label>
+                <input type="date" id="reportStartDate" />
+            </div>
+            <div class="range">
+                <label for="reportEndDate">To:</label>
+                <input type="date" id="reportEndDate" />
+            </div>
+            <button onclick="loadReport()">Load Report</button>
+            <button class="csv-btn" id="csvBtn" onclick="downloadCsv()" style="display:none;">Download CSV</button>
+        </div>
+        <div id="reportContent"></div>
+    </div>
+    <script>
+        let reportData = null;
+
+        function getTodayLocal() {
+            const d = new Date();
+            return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+        }
+
+        const today = getTodayLocal();
+        document.getElementById('reportStartDate').value = today;
+        document.getElementById('reportEndDate').value = today;
+
+        async function loadReport() {
+            const startDate = document.getElementById('reportStartDate').value;
+            const endDate = document.getElementById('reportEndDate').value;
+            if (!startDate) return;
+            const el = document.getElementById('reportContent');
+            el.innerHTML = 'Loading...';
+            try {
+                let url = '/api/reports/daily-summary?date=' + encodeURIComponent(startDate);
+                if (endDate && endDate >= startDate) {
+                    url += '&end_date=' + encodeURIComponent(endDate);
+                }
+                const res = await fetch(url);
+                if (!res.ok) throw new Error(await res.text());
+                reportData = await res.json();
+                renderReport(reportData);
+                document.getElementById('csvBtn').style.display = 'inline-block';
+            } catch (e) {
+                el.innerHTML = '<p style="color:red;">Error: ' + e.message + '</p>';
+            }
+        }
+
+        // Build summary: { serviceName => { count, totalPay } }
+        function buildServiceSummary(data) {
+            const summary = {};
+            (data.days || []).forEach(day => {
+                (day.therapists || []).forEach(t => {
+                    (t.services || []).forEach(s => {
+                        const name = s.service || '';
+                        if (!name) return;
+                        if (!summary[name]) summary[name] = { count: 0, totalPay: 0 };
+                        summary[name].count += 1;
+                        const pay = Number(s.pay || 0);
+                        if (!Number.isNaN(pay)) summary[name].totalPay += pay;
+                    });
+                });
+            });
+            return summary;
+        }
+
+        function renderReport(data) {
+            const el = document.getElementById('reportContent');
+            if (!data.days || data.days.length === 0) {
+                el.innerHTML = '<p>No data for this range.</p>';
+                return;
+            }
+            const summary = buildServiceSummary(data);
+            const serviceNames = Object.keys(summary).sort((a, b) => a.localeCompare(b));
+            if (serviceNames.length === 0) {
+                el.innerHTML = '<p>No qualifying services for this range.</p>';
+                return;
+            }
+            let html = '<table class="report-table"><thead><tr><th>Service</th><th>Quantity</th><th>Total Provider Pay</th></tr></thead><tbody>';
+            let grandCount = 0;
+            let grandPay = 0;
+            serviceNames.forEach(name => {
+                const item = summary[name];
+                grandCount += item.count;
+                grandPay += item.totalPay;
+                html += `<tr><td>${name}</td><td>${item.count}</td><td>$${item.totalPay.toFixed(2)}</td></tr>`;
+            });
+            html += `<tr class="total-row"><td><strong>Grand total</strong></td><td>${grandCount}</td><td>$${grandPay.toFixed(2)}</td></tr>`;
+            html += '</tbody></table>';
+            el.innerHTML = html;
+        }
+
+        function downloadCsv() {
+            if (!reportData || !reportData.days) return;
+            const start = reportData.start_date || '';
+            const end = reportData.end_date || start;
+            const summary = buildServiceSummary(reportData);
+            const serviceNames = Object.keys(summary).sort((a, b) => a.localeCompare(b));
+            const rows = [['Service', 'Quantity', 'Total Provider Pay']];
+            let grandCount = 0;
+            let grandPay = 0;
+            serviceNames.forEach(name => {
+                const item = summary[name];
+                grandCount += item.count;
+                grandPay += item.totalPay;
+                rows.push([name, item.count, item.totalPay.toFixed(2)]);
+            });
+            rows.push([], ['Grand total', grandCount, grandPay.toFixed(2)]);
+            const filename = 'service-summary-' + start + (end !== start ? '-' + end : '') + '.csv';
+            const csv = rows.map(r => Array.isArray(r) ? r.map(c => '"' + String(c).replace(/"/g, '""') + '"').join(',') : '').join('\n');
+            const blob = new Blob([csv], { type: 'text/csv' });
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = filename;
+            a.click();
+            URL.revokeObjectURL(a.href);
+        }
+
+        // Load today's report automatically on page load
+        loadReport();
+    </script>
+</body>
+</html>
+

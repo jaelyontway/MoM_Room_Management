@@ -1,0 +1,821 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Customers & hours — calendar</title>
+    <style>
+        * { box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; margin: 0; background: #f4f6f8; color: #222; }
+        .wrap { max-width: 1380px; margin: 0 auto; padding: 16px 20px 40px; }
+        h1 { font-size: 1.35rem; margin: 0 0 6px; }
+        .sub { color: #666; font-size: 0.9rem; margin-bottom: 16px; }
+        .controls {
+            display: flex; flex-wrap: wrap; gap: 12px 16px; align-items: flex-end;
+            background: #fff; padding: 14px 16px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,.08);
+            margin-bottom: 16px;
+        }
+        .ctrl { display: flex; flex-direction: column; gap: 4px; }
+        .ctrl label { font-size: 12px; font-weight: 600; color: #444; }
+        .ctrl input, .ctrl select { padding: 6px 10px; border: 1px solid #ced4da; border-radius: 4px; font-size: 14px; }
+        button.primary {
+            padding: 8px 18px; background: #0d6efd; color: #fff; border: none; border-radius: 6px;
+            font-weight: 600; cursor: pointer; font-size: 14px;
+        }
+        button.primary:hover { background: #0b5ed7; }
+        button.primary:disabled { opacity: 0.6; cursor: not-allowed; }
+        .tabs { display: flex; gap: 8px; margin-bottom: 12px; }
+        .tabs button {
+            padding: 8px 14px; border: 1px solid #ced4da; background: #fff; border-radius: 6px; cursor: pointer; font-size: 13px;
+        }
+        .tabs button.active { background: #e7f1ff; border-color: #0d6efd; color: #0d6efd; font-weight: 600; }
+        .panel { display: none; }
+        .panel.active { display: block; }
+        .cal-scroll {
+            max-height: calc(100vh - 220px); min-height: 320px; overflow-y: auto;
+            background: #fff; border-radius: 8px; padding: 12px 16px 20px; box-shadow: 0 1px 3px rgba(0,0,0,.08);
+        }
+        .month-block { margin-bottom: 28px; }
+        .month-title-row { margin: 0 0 10px; }
+        .month-title-row .month-title { font-size: 1.05rem; font-weight: 700; margin: 0; color: #1a1a1a; }
+        .month-layout {
+            display: flex; gap: 14px; align-items: flex-start;
+        }
+        .month-stats {
+            flex: 0 0 248px; max-width: 248px;
+            background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px;
+            padding: 10px 11px 12px; font-size: 11px; line-height: 1.35;
+        }
+        .month-stats h3 {
+            margin: 0 0 6px; font-size: 11px; font-weight: 700; color: #334155;
+            text-transform: uppercase; letter-spacing: 0.04em;
+        }
+        .month-stats h3:not(:first-child) { margin-top: 12px; }
+        .stat-kv { display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; margin: 0 0 4px; }
+        .stat-kv dt { margin: 0; color: #64748b; font-weight: 600; }
+        .stat-kv dd { margin: 0; font-weight: 700; color: #0f172a; text-align: right; }
+        .stat-delta { font-size: 10px; font-weight: 600; margin-left: 4px; }
+        .stat-delta.up { color: #047857; }
+        .stat-delta.down { color: #b91c1c; }
+        .stat-delta.flat { color: #64748b; }
+        .cmp-bars { margin-top: 4px; }
+        .cmp-row { margin-bottom: 8px; }
+        .cmp-row-label { font-size: 10px; font-weight: 600; color: #475569; margin-bottom: 3px; }
+        .cmp-bar-line { display: flex; align-items: center; gap: 6px; margin-bottom: 2px; }
+        .cmp-bar-line .lbl { flex: 0 0 52px; font-size: 9px; color: #64748b; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .cmp-bar-track { flex: 1; height: 7px; background: #e2e8f0; border-radius: 3px; overflow: hidden; }
+        .cmp-bar-fill { height: 100%; border-radius: 3px; min-width: 2px; }
+        .cmp-bar-fill.cust { background: #1d4ed8; }
+        .cmp-bar-fill.hrs { background: #059669; }
+        .cmp-bar-fill.onl { background: #3b82f6; }
+        .cmp-bar-fill.us { background: #f97316; }
+        .cmp-bar-line .val { flex: 0 0 36px; font-size: 9px; font-weight: 700; text-align: right; color: #334155; }
+        .trend-mini svg { display: block; width: 100%; height: 44px; margin-top: 4px; background: #fff; border-radius: 4px; border: 1px solid #e2e8f0; }
+        .trend-mini-cap { font-size: 9px; color: #94a3b8; margin-top: 2px; }
+        .month-cal { flex: 1; min-width: 0; }
+        .dow-row, .days-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+        .dow-row { margin-bottom: 4px; }
+        .dow-cell { font-size: 11px; font-weight: 600; color: #6c757d; text-align: center; padding: 4px 2px; }
+        .day-cell {
+            min-height: 88px; border: 1px solid #e9ecef; border-radius: 6px; padding: 4px 5px 3px;
+            font-size: 11px; line-height: 1.25; background: #fafbfc;
+        }
+        .day-cell.out { background: #f0f0f0; opacity: 0.55; }
+        .day-cell .dn {
+            display: inline-block; min-width: 1.35rem; text-align: center;
+            font-weight: 800; font-size: 12px; font-variant-numeric: tabular-nums;
+            color: #fff; background: linear-gradient(145deg, #1e3a5f 0%, #0d47a1 100%);
+            border-radius: 4px; padding: 1px 5px 2px; margin: 0 0 3px;
+            box-shadow: 0 1px 2px rgba(15, 23, 42, 0.22);
+            letter-spacing: 0.02em;
+        }
+        .day-cell .st { color: #1e293b; }
+        .day-cell .st strong { color: #0d47a1; font-weight: 800; }
+        .day-cell .st-booked-ch { color: #334155; font-size: 10px; margin-top: 1px; line-height: 1.2; }
+        .day-cell .st-booked-ch .sep { color: #94a3b8; margin: 0 0.25em; }
+        .day-cell.has-data { background: #f0f7ff; border-color: #b6d4fe; }
+        /* Today: clear accent (vs past default and future) */
+        .day-cell.day-today { box-shadow: inset 0 0 0 2px #0d6efd; background: #fffef8; }
+        .day-cell.day-today .dn { background: linear-gradient(145deg, #0d6efd 0%, #084298 100%); }
+        /* Future days: cooler, muted — easy to scan vs past/today */
+        .day-cell.day-future { background: #e8ecf4; border-color: #c8d0e0; color: #4a5568; }
+        .day-cell.day-future .dn { background: linear-gradient(145deg, #64748b 0%, #475569 100%); color: #f8fafc; }
+        .day-cell.day-future.has-data { background: #dce4f2; border-color: #b0bdd4; }
+        .day-cell.day-future.day-today { background: #f2f6ff; box-shadow: inset 0 0 0 2px #6f9ef7; }
+        @media (max-width: 900px) {
+            .month-layout { flex-direction: column; }
+            .month-stats { flex: 1 1 auto; max-width: none; width: 100%; }
+        }
+        .err { color: #b02a37; padding: 12px; background: #f8d7da; border-radius: 6px; margin-bottom: 12px; }
+        table.report { width: 100%; border-collapse: collapse; background: #fff; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+        table.report th, table.report td { border: 1px solid #dee2e6; padding: 8px 10px; text-align: left; font-size: 13px; }
+        table.report th { background: #0d6efd; color: #fff; font-weight: 600; }
+        table.report tr:nth-child(even) { background: #f8f9fa; }
+        table.report tfoot td { font-weight: 700; background: #e7f1ff; }
+        table.report tbody tr.list-row-future { background: #f4f6fa; color: #4a5568; }
+        .back { margin-bottom: 12px; }
+        .back a { color: #0d6efd; text-decoration: none; font-size: 14px; }
+        .back a:hover { text-decoration: underline; }
+    </style>
+</head>
+<body>
+    <div class="wrap">
+        <div class="back"><a href="/static/index.html">← Dashboard</a></div>
+        <h1>Customers & booked hours</h1>
+        <p class="sub">Calendar lists months in <strong>chronological order</strong> (oldest first, <strong>through month</strong> last). After load, the view scrolls to the bottom so the through month is in view—<strong>scroll up</strong> for earlier months. Each month has a <strong>stats panel on the left</strong>: totals, bar comparison to the prior one–two months in your loaded range, and simple daily trend lines (day 1 → end of month). Comparisons use the same day-of-month window when the month is still in progress. Set how many months back (load at least 2–3 to compare trends). List tab uses the same date limits (max about <strong>800 days</strong> / two years). <strong>Customers</strong> = headcount: couple = 2, single = 1. Cancelled / no-show excluded. <strong>💻 / 📞</strong> = appointment counts booked online (customer) vs by staff (Square merchant/team); appointments with an unknown booker are not counted in either. Days before <strong>yesterday</strong> use stored totals after first load; use <strong>Refresh past from Square</strong> to rebuild (large ranges can be slow).</p>
+
+        <div class="tabs">
+            <button type="button" class="tab active" data-panel="calendar">Calendar</button>
+            <button type="button" class="tab" data-panel="list">List</button>
+        </div>
+
+        <div id="errBox"></div>
+
+        <div id="panel-calendar" class="panel active">
+            <div class="controls">
+                <div class="ctrl">
+                    <label for="calEndMonth">Through month</label>
+                    <input type="month" id="calEndMonth" title="Last month included in the report (usually leave on current month)" />
+                </div>
+                <div class="ctrl">
+                    <label for="calMonthsBack">Months back</label>
+                    <input type="number" id="calMonthsBack" min="1" max="29" value="2" step="1"
+                        title="How many calendar months to include, ending at Through month (capped to fit the server limit of 800 days)" />
+                </div>
+                <div class="ctrl">
+                    <label for="calQuickRange">Quick range</label>
+                    <select id="calQuickRange" title="Sets Through month and months back; pick Custom to edit manually">
+                        <option value="custom" selected>Custom</option>
+                        <option value="rolling12">Rolling 12 months (→ today’s month)</option>
+                        <option value="ytd">Year-to-date (Jan → through month)</option>
+                        <option value="lastCalYear">Last calendar year (Jan–Dec)</option>
+                        <option value="calYearMinus2">Two calendar years ago (Jan–Dec)</option>
+                    </select>
+                </div>
+                <label class="ctrl" style="flex-direction:row;align-items:center;gap:8px;margin-bottom:0;">
+                    <input type="checkbox" id="refreshPastFromApi" />
+                    <span style="font-size:13px;font-weight:600;color:#444;">Refresh past from Square</span>
+                </label>
+                <button type="button" class="primary" id="calLoadBtn">Load calendar</button>
+            </div>
+            <div class="cal-scroll" id="calMount"></div>
+        </div>
+
+        <div id="panel-list" class="panel">
+            <div class="controls">
+                <div class="ctrl">
+                    <label for="listStart">From</label>
+                    <input type="date" id="listStart" />
+                </div>
+                <div class="ctrl">
+                    <label for="listEnd">To</label>
+                    <input type="date" id="listEnd" />
+                </div>
+                <label class="ctrl" style="flex-direction:row;align-items:center;gap:8px;margin-bottom:0;">
+                    <input type="checkbox" id="refreshPastFromApiList" />
+                    <span style="font-size:13px;font-weight:600;color:#444;">Refresh past from Square</span>
+                </label>
+                <button type="button" class="primary" id="listLoadBtn">Load list</button>
+            </div>
+            <div id="listMount"></div>
+        </div>
+    </div>
+    <script>
+        const MAX_RANGE_DAYS = 800;
+
+        const QUICK_CUSTOM = 'custom';
+        const QUICK_ROLLING12 = 'rolling12';
+        const QUICK_YTD = 'ytd';
+        const QUICK_LAST_CAL_YEAR = 'lastCalYear';
+        const QUICK_CAL_YEAR_MINUS2 = 'calYearMinus2';
+
+        /** Incremented per calendar load so an older fetch cannot overwrite a newer range. */
+        let calendarLoadGeneration = 0;
+
+        function getTodayLocal() {
+            const d = new Date();
+            return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+        }
+
+        function pad2(n) { return String(n).padStart(2, '0'); }
+
+        /** Max whole calendar months that can fit in MAX_RANGE_DAYS (conservative). */
+        function maxMonthsAllowed() {
+            return Math.min(29, Math.max(1, Math.floor(MAX_RANGE_DAYS / 28)));
+        }
+
+        function parseMonthsBack() {
+            const cap = maxMonthsAllowed();
+            let n = parseInt(document.getElementById('calMonthsBack').value, 10);
+            if (!Number.isFinite(n) || n < 1) n = 1;
+            if (n > cap) n = cap;
+            return n;
+        }
+
+        function clampMonthsBackInput() {
+            const el = document.getElementById('calMonthsBack');
+            el.max = String(maxMonthsAllowed());
+            const n = parseMonthsBack();
+            el.value = String(n);
+            return n;
+        }
+
+        function setQuickRangeSelect(value) {
+            const sel = document.getElementById('calQuickRange');
+            if (!sel) return;
+            const opt = Array.from(sel.options).find(function (o) { return o.value === value; });
+            sel.value = opt ? value : QUICK_CUSTOM;
+        }
+
+        /**
+         * Apply a quick preset to Through month + months back.
+         * lastCalYear / calYearMinus2: full Jan–Dec of that year (12 grids).
+         * ytd: Jan 1 through last day of selected through month (same year as through month).
+         */
+        function applyQuickRangePreset(value) {
+            const today = new Date();
+            const ty = today.getFullYear();
+            const tm0 = today.getMonth();
+            const thisMonthVal = ty + '-' + pad2(tm0 + 1);
+
+            if (value === QUICK_ROLLING12) {
+                document.getElementById('calEndMonth').value = thisMonthVal;
+                document.getElementById('calMonthsBack').value = '12';
+                return;
+            }
+            if (value === QUICK_LAST_CAL_YEAR) {
+                const y = ty - 1;
+                document.getElementById('calEndMonth').value = y + '-12';
+                document.getElementById('calMonthsBack').value = '12';
+                return;
+            }
+            if (value === QUICK_CAL_YEAR_MINUS2) {
+                const y = ty - 2;
+                document.getElementById('calEndMonth').value = y + '-12';
+                document.getElementById('calMonthsBack').value = '12';
+                return;
+            }
+            if (value === QUICK_YTD) {
+                let em = document.getElementById('calEndMonth').value;
+                if (!em) em = thisMonthVal;
+                const parts = em.split('-').map(Number);
+                if (parts.length < 2 || !parts[0] || !parts[1]) return;
+                const ey = parts[0];
+                const em0 = parts[1] - 1;
+                document.getElementById('calEndMonth').value = ey + '-' + pad2(em0 + 1);
+                document.getElementById('calMonthsBack').value = String(em0 + 1);
+                return;
+            }
+        }
+
+        function ymd(y, m0, day) {
+            return y + '-' + pad2(m0 + 1) + '-' + pad2(day);
+        }
+
+        function parseYmd(s) {
+            const p = s.split('-').map(Number);
+            return { y: p[0], m0: p[1] - 1, d: p[2] };
+        }
+
+        function addDays(ymdStr, delta) {
+            const { y, m0, d } = parseYmd(ymdStr);
+            const dt = new Date(y, m0, d + delta);
+            return dt.getFullYear() + '-' + pad2(dt.getMonth() + 1) + '-' + pad2(dt.getDate());
+        }
+
+        function daysBetweenInclusive(a, b) {
+            const A = new Date(a + 'T12:00:00');
+            const B = new Date(b + 'T12:00:00');
+            return Math.round((B - A) / 86400000) + 1;
+        }
+
+        function formatHrsMins(totalMin) {
+            const m = Math.max(0, Math.round(Number(totalMin) || 0));
+            if (m < 60) return m + ' min';
+            const h = Math.floor(m / 60);
+            const r = m % 60;
+            return r ? h + 'h ' + r + 'm' : h + 'h';
+        }
+
+        async function fetchRange(start, end, refreshPast) {
+            const n = daysBetweenInclusive(start, end);
+            if (n > MAX_RANGE_DAYS) {
+                throw new Error('Range too long (max ' + MAX_RANGE_DAYS + ' days).');
+            }
+            let url = '/api/reports/customers-hours?start_date=' + encodeURIComponent(start) + '&end_date=' + encodeURIComponent(end);
+            if (refreshPast) url += '&refresh_from_api=true';
+            const res = await fetch(url);
+            if (!res.ok) {
+                let msg = await res.text();
+                try { const j = JSON.parse(msg); msg = j.detail || msg; } catch (e) {}
+                throw new Error(msg || res.statusText);
+            }
+            return res.json();
+        }
+
+        /** Normalize API date key (always YYYY-MM-DD; tolerate full ISO if present). */
+        function dayKeyFromRow(row) {
+            const raw = row && row.date;
+            if (raw == null || raw === '') return '';
+            const s = String(raw);
+            return s.length >= 10 ? s.slice(0, 10) : s;
+        }
+
+        function daysMapFromApi(data) {
+            const m = {};
+            (data.days || []).forEach(function (row) {
+                const k = dayKeyFromRow(row);
+                if (k) m[k] = row;
+            });
+            return m;
+        }
+
+        function monthStartYmd(y, m0) {
+            return ymd(y, m0, 1);
+        }
+
+        function monthEndYmd(y, m0) {
+            const last = new Date(y, m0 + 1, 0).getDate();
+            return ymd(y, m0, last);
+        }
+
+        /** Per calendar day in month (1..last): daily metrics; 0 when out of loaded range. */
+        function monthDaySeries(byDate, cy, cm0, rangeStart, rangeEnd) {
+            const dim = new Date(cy, cm0 + 1, 0).getDate();
+            const cust = [];
+            const mins = [];
+            const online = [];
+            const byUs = [];
+            for (let day = 1; day <= dim; day++) {
+                const ds = ymd(cy, cm0, day);
+                const inRange = ds >= rangeStart && ds <= rangeEnd;
+                const row = inRange ? byDate[ds] : null;
+                cust.push(row ? Number(row.customer_count) || 0 : 0);
+                mins.push(row ? Number(row.total_minutes) || 0 : 0);
+                online.push(row ? Number(row.booked_online_count) || 0 : 0);
+                byUs.push(row ? Number(row.booked_by_us_count) || 0 : 0);
+            }
+            return { cust: cust, mins: mins, online: online, byUs: byUs, dim: dim };
+        }
+
+        function monthSeriesHasActivity(series) {
+            return series.cust.some(function (v) { return v > 0; })
+                || series.mins.some(function (v) { return v > 0; });
+        }
+
+        /** Last day to include when comparing months (MTD for current month). */
+        function compareThroughDay(cy, cm0, todayStr) {
+            const dim = new Date(cy, cm0 + 1, 0).getDate();
+            const t = parseYmd(todayStr);
+            if (t.y === cy && t.m0 === cm0) return Math.min(dim, t.d);
+            return dim;
+        }
+
+        function monthTotalsFromMap(byDate, cy, cm0, rangeStart, rangeEnd, throughDay) {
+            let cust = 0;
+            let mins = 0;
+            let online = 0;
+            let byUs = 0;
+            const dim = new Date(cy, cm0 + 1, 0).getDate();
+            const lastDay = throughDay != null ? Math.min(dim, throughDay) : dim;
+            for (let day = 1; day <= lastDay; day++) {
+                const ds = ymd(cy, cm0, day);
+                if (ds < rangeStart || ds > rangeEnd) continue;
+                const row = byDate[ds];
+                if (!row) continue;
+                cust += Number(row.customer_count) || 0;
+                mins += Number(row.total_minutes) || 0;
+                online += Number(row.booked_online_count) || 0;
+                byUs += Number(row.booked_by_us_count) || 0;
+            }
+            return { cust: cust, mins: mins, online: online, byUs: byUs, throughDay: lastDay, dim: dim };
+        }
+
+        function alignedThroughDay(curThrough, cy, cm0) {
+            const dim = new Date(cy, cm0 + 1, 0).getDate();
+            return Math.min(dim, curThrough);
+        }
+
+        function monthBundle(byDate, cy, cm0, rangeStart, rangeEnd, todayStr, throughOverride) {
+            const through = throughOverride != null
+                ? alignedThroughDay(throughOverride, cy, cm0)
+                : compareThroughDay(cy, cm0, todayStr);
+            const mt = monthTotalsFromMap(byDate, cy, cm0, rangeStart, rangeEnd, through);
+            const series = monthDaySeries(byDate, cy, cm0, rangeStart, rangeEnd);
+            const short = new Date(cy, cm0, 1).toLocaleDateString('en-US', { month: 'short' });
+            return {
+                cy: cy,
+                cm0: cm0,
+                label: short,
+                longLabel: new Date(cy, cm0, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' }),
+                mt: mt,
+                series: series,
+                through: through,
+            };
+        }
+
+        function pctDelta(cur, prev) {
+            if (prev == null || prev === undefined) return { text: '—', cls: 'flat' };
+            if (prev === 0) {
+                if (cur === 0) return { text: '0%', cls: 'flat' };
+                return { text: 'new', cls: 'up' };
+            }
+            const p = Math.round(((cur - prev) / prev) * 100);
+            if (p === 0) return { text: '0%', cls: 'flat' };
+            return { text: (p > 0 ? '+' : '') + p + '%', cls: p > 0 ? 'up' : 'down' };
+        }
+
+        function escapeHtml(s) {
+            return String(s)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;');
+        }
+
+        function dailyTrendSvg(values, color, label) {
+            const n = values.length;
+            if (n < 1) return '';
+            const w = Math.max(n, 28);
+            const h = 40;
+            const pad = { x: 1, y: 3 };
+            const maxV = Math.max(1, Math.max.apply(null, values));
+            const innerW = w - pad.x * 2;
+            const innerH = h - pad.y * 2;
+            const pts = [];
+            for (let i = 0; i < n; i++) {
+                const x = pad.x + (n === 1 ? innerW / 2 : (i / (n - 1)) * innerW);
+                const y = pad.y + innerH - (values[i] / maxV) * innerH;
+                pts.push(x.toFixed(1) + ',' + y.toFixed(1));
+            }
+            return (
+                '<svg viewBox="0 0 ' + w + ' ' + h + '" preserveAspectRatio="none" role="img" aria-label="' + escapeHtml(label) + '">' +
+                '<polyline fill="none" stroke="' + color + '" stroke-width="1.2" stroke-linejoin="round" stroke-linecap="round" points="' + pts.join(' ') + '"/>' +
+                '</svg>'
+            );
+        }
+
+        function cmpBarRow(metricLabel, bars, cssClass) {
+            const maxV = Math.max(1, Math.max.apply(null, bars.map(function (b) { return b.value; })));
+            let html = '<div class="cmp-row"><div class="cmp-row-label">' + escapeHtml(metricLabel) + '</div>';
+            bars.forEach(function (b) {
+                const pct = Math.round((b.value / maxV) * 100);
+                html +=
+                    '<div class="cmp-bar-line"><span class="lbl" title="' + escapeHtml(b.label) + '">' + escapeHtml(b.label) + '</span>' +
+                    '<div class="cmp-bar-track"><div class="cmp-bar-fill ' + cssClass + '" style="width:' + pct + '%"></div></div>' +
+                    '<span class="val">' + escapeHtml(String(b.display)) + '</span></div>';
+            });
+            return html + '</div>';
+        }
+
+        function buildMonthStatsPanel(cur, prev1, prev2, todayStr) {
+            const mt = cur.mt;
+            const p1 = prev1 ? prev1.mt : null;
+            const compareNote = cur.through < cur.mt.dim
+                ? ' (days 1–' + cur.through + ' vs same days prior months)'
+                : '';
+            const dCust = pctDelta(mt.cust, p1 ? p1.cust : null);
+            const dHrs = pctDelta(mt.mins, p1 ? p1.mins : null);
+            const dOnl = pctDelta(mt.online, p1 ? p1.online : null);
+            const dUs = pctDelta(mt.byUs, p1 ? p1.byUs : null);
+
+            const months = [];
+            if (prev2) months.push(prev2);
+            if (prev1) months.push(prev1);
+            months.push(cur);
+
+            function barsFor(getter, displayFn, css) {
+                return months.map(function (m) {
+                    const v = getter(m.mt);
+                    return { label: m.label, value: v, display: displayFn(v) };
+                });
+            }
+
+            let html = '<aside class="month-stats">';
+            html += '<h3>This month</h3>';
+            html += '<dl class="stat-kv">';
+            html += '<dt>Customers</dt><dd>' + mt.cust + '<span class="stat-delta ' + dCust.cls + '">' + dCust.text + '</span></dd>';
+            html += '<dt>Booked time</dt><dd>' + formatHrsMins(mt.mins) + '<span class="stat-delta ' + dHrs.cls + '">' + dHrs.text + '</span></dd>';
+            html += '<dt>Online 💻</dt><dd>' + mt.online + '<span class="stat-delta ' + dOnl.cls + '">' + dOnl.text + '</span></dd>';
+            html += '<dt>Call-in 📞</dt><dd>' + mt.byUs + '<span class="stat-delta ' + dUs.cls + '">' + dUs.text + '</span></dd>';
+            html += '</dl>';
+            if (p1) {
+                html += '<p style="margin:6px 0 0;font-size:9px;color:#64748b">% change vs ' + escapeHtml(prev1.label) + compareNote + '</p>';
+            } else {
+                html += '<p style="margin:6px 0 0;font-size:9px;color:#64748b">Load more months back to compare trends.</p>';
+            }
+
+            if (months.length > 1) {
+                html += '<h3>Last ' + months.length + ' months</h3><div class="cmp-bars">';
+                html += cmpBarRow('Customers', barsFor(function (t) { return t.cust; }, function (v) { return v; }, 'cust'));
+                html += cmpBarRow('Booked hours', barsFor(function (t) { return t.mins; }, function (v) { return formatHrsMins(v); }, 'hrs'));
+                html += cmpBarRow('Online appts', barsFor(function (t) { return t.online; }, function (v) { return v; }, 'onl'));
+                html += cmpBarRow('Call-in appts', barsFor(function (t) { return t.byUs; }, function (v) { return v; }, 'us'));
+                html += '</div>';
+            }
+
+            if (monthSeriesHasActivity(cur.series)) {
+                const slice = cur.series.cust.slice(0, cur.through);
+                const sliceH = cur.series.mins.slice(0, cur.through);
+                html += '<h3>Daily trend</h3><div class="trend-mini">';
+                html += dailyTrendSvg(slice, '#1d4ed8', 'Customers by day');
+                html += '<div class="trend-mini-cap">Customers · day 1 → ' + cur.through + '</div>';
+                html += dailyTrendSvg(sliceH, '#059669', 'Booked minutes by day');
+                html += '<div class="trend-mini-cap">Booked time · day 1 → ' + cur.through + '</div></div>';
+            }
+
+            html += '</aside>';
+            return html;
+        }
+
+        /**
+         * numMonths calendar months ending at endMonthVal (YYYY-MM).
+         * numMonths is coerced to a positive integer (avoids string math / bad input).
+         */
+        function rangeEndingAtMonth(endMonthVal, numMonths) {
+            if (!endMonthVal) return null;
+            const nm = Math.max(1, Math.min(maxMonthsAllowed(), parseInt(String(numMonths), 10) || 1));
+            const parts = endMonthVal.split('-').map(Number);
+            if (parts.length < 2 || !parts[0] || !parts[1]) return null;
+            const ey = parts[0];
+            const em0 = parts[1] - 1;
+            const startDt = new Date(ey, em0 - (nm - 1), 1);
+            const sy = startDt.getFullYear();
+            const sm0 = startDt.getMonth();
+            return {
+                start: monthStartYmd(sy, sm0),
+                end: monthEndYmd(ey, em0),
+                sy: sy,
+                sm0: sm0,
+                ey: ey,
+                em0: em0,
+                numMonths: nm,
+            };
+        }
+
+        function syncListDefaultsFromCalendar() {
+            const endM = document.getElementById('calEndMonth').value;
+            const n = parseMonthsBack();
+            const r = rangeEndingAtMonth(endM, n);
+            if (r) {
+                document.getElementById('listStart').value = r.start;
+                document.getElementById('listEnd').value = r.end;
+            }
+        }
+
+        function renderCalendar(endMonthValue, numMonths) {
+            const errBox = document.getElementById('errBox');
+            const mount = document.getElementById('calMount');
+            errBox.textContent = '';
+            const range = rangeEndingAtMonth(endMonthValue, numMonths);
+            if (!range) {
+                mount.innerHTML = '<p>Select through month and months back.</p>';
+                return;
+            }
+            const start = range.start;
+            const end = range.end;
+            const sy = range.sy;
+            const sm0 = range.sm0;
+
+            const btn = document.getElementById('calLoadBtn');
+            if (daysBetweenInclusive(start, end) > MAX_RANGE_DAYS) {
+                errBox.innerHTML = '<div class="err">That many months exceeds the ' + MAX_RANGE_DAYS + '-day limit; choose fewer months or an earlier end month.</div>';
+                mount.innerHTML = '';
+                return;
+            }
+            btn.disabled = true;
+            mount.innerHTML = '<p>Loading…</p>';
+
+            const loadGen = ++calendarLoadGeneration;
+            fetchRange(start, end, document.getElementById('refreshPastFromApi').checked).then(function (data) {
+                if (loadGen !== calendarLoadGeneration) return;
+                const byDate = daysMapFromApi(data);
+                const todayStr = getTodayLocal();
+                const frag = document.createDocumentFragment();
+                const monthBundles = [];
+                for (let mi = 0; mi < range.numMonths; mi++) {
+                    const cur = new Date(sy, sm0 + mi, 1);
+                    monthBundles.push(monthBundle(byDate, cur.getFullYear(), cur.getMonth(), start, end, todayStr));
+                }
+                /* Chronological order (oldest month first, through month last) so earlier months are not hidden above a tall “through” grid. */
+                for (let mi = 0; mi < range.numMonths; mi++) {
+                    const curB = monthBundles[mi];
+                    const cy = curB.cy;
+                    const cm0 = curB.cm0;
+                    const thru = curB.through;
+                    const prev1B = mi > 0
+                        ? monthBundle(byDate, monthBundles[mi - 1].cy, monthBundles[mi - 1].cm0, start, end, todayStr, thru)
+                        : null;
+                    const prev2B = mi > 1
+                        ? monthBundle(byDate, monthBundles[mi - 2].cy, monthBundles[mi - 2].cm0, start, end, todayStr, thru)
+                        : null;
+                    const block = document.createElement('div');
+                    block.className = 'month-block';
+                    const titleRow = document.createElement('div');
+                    titleRow.className = 'month-title-row';
+                    const title = document.createElement('h2');
+                    title.className = 'month-title';
+                    title.textContent = curB.longLabel;
+                    titleRow.appendChild(title);
+                    block.appendChild(titleRow);
+
+                    const layout = document.createElement('div');
+                    layout.className = 'month-layout';
+                    layout.insertAdjacentHTML('afterbegin', buildMonthStatsPanel(curB, prev1B, prev2B, todayStr));
+
+                    const cal = document.createElement('div');
+                    cal.className = 'month-cal';
+
+                    const dow = document.createElement('div');
+                    dow.className = 'dow-row';
+                    ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].forEach(function (w) {
+                        const c = document.createElement('div');
+                        c.className = 'dow-cell';
+                        c.textContent = w;
+                        dow.appendChild(c);
+                    });
+                    cal.appendChild(dow);
+
+                    const firstDow = new Date(cy, cm0, 1).getDay();
+                    const dim = new Date(cy, cm0 + 1, 0).getDate();
+                    const grid = document.createElement('div');
+                    grid.className = 'days-grid';
+                    for (let i = 0; i < firstDow; i++) {
+                        const e = document.createElement('div');
+                        e.className = 'day-cell out';
+                        grid.appendChild(e);
+                    }
+                    for (let day = 1; day <= dim; day++) {
+                        const ds = ymd(cy, cm0, day);
+                        const cell = document.createElement('div');
+                        cell.className = 'day-cell';
+                        const inRange = ds >= start && ds <= end;
+                        if (!inRange) cell.classList.add('out');
+                        const isFuture = ds > todayStr;
+                        const isToday = ds === todayStr;
+                        if (isFuture) cell.classList.add('day-future');
+                        if (isToday) cell.classList.add('day-today');
+                        const row = byDate[ds];
+                        const apptCount = row ? (Number(row.appointment_count) || 0) : 0;
+                        const custN = row ? (Number(row.customer_count) || 0) : 0;
+                        const minsN = row ? (Number(row.total_minutes) || 0) : 0;
+                        const hasDayStats = custN > 0 || minsN > 0 || apptCount > 0;
+                        const futureEmpty = isFuture && !hasDayStats;
+                        const numEl = document.createElement('div');
+                        numEl.className = 'dn';
+                        numEl.textContent = String(day);
+                        cell.appendChild(numEl);
+                        /* Future days with no activity: keep cell minimal (no clutter). Any non-zero from API → show. */
+                        if (inRange && row && !futureEmpty) {
+                            if (hasDayStats) {
+                                cell.classList.add('has-data');
+                                const st = document.createElement('div');
+                                st.className = 'st';
+                                st.innerHTML = '<strong>' + row.customer_count + '</strong> cust · <strong>' + formatHrsMins(row.total_minutes) + '</strong>';
+                                const onl = Number(row.booked_online_count) || 0;
+                                const bus = Number(row.booked_by_us_count) || 0;
+                                const ch = document.createElement('div');
+                                ch.className = 'st st-booked-ch';
+                                ch.innerHTML = '💻 <strong>' + onl + '</strong><span class="sep">·</span>📞 <strong>' + bus + '</strong>';
+                                const ap = document.createElement('div');
+                                ap.className = 'st';
+                                ap.textContent = apptCount + ' appts';
+                                cell.appendChild(st);
+                                cell.appendChild(ch);
+                                cell.appendChild(ap);
+                            } else {
+                                cell.classList.add('has-data');
+                                const st = document.createElement('div');
+                                st.className = 'st';
+                                st.textContent = '—';
+                                cell.appendChild(st);
+                            }
+                        } else if (inRange && !row && !isFuture) {
+                            const st = document.createElement('div');
+                            st.className = 'st';
+                            st.textContent = '—';
+                            cell.appendChild(st);
+                        } else if (inRange && !row && isFuture) {
+                            /* Future day missing from API map: treat like no bookings */
+                        }
+                        grid.appendChild(cell);
+                    }
+                    cal.appendChild(grid);
+                    layout.appendChild(cal);
+                    block.appendChild(layout);
+                    frag.appendChild(block);
+                }
+                mount.innerHTML = '';
+                mount.appendChild(frag);
+                /* Show through month (last in range) without making user hunt below the fold */
+                requestAnimationFrame(function () {
+                    mount.scrollTop = mount.scrollHeight;
+                });
+            }).catch(function (e) {
+                if (loadGen !== calendarLoadGeneration) return;
+                errBox.innerHTML = '<div class="err">' + (e.message || String(e)) + '</div>';
+                mount.innerHTML = '';
+            }).finally(function () {
+                if (loadGen === calendarLoadGeneration) btn.disabled = false;
+            });
+        }
+
+        function renderList(start, end) {
+            const errBox = document.getElementById('errBox');
+            const mount = document.getElementById('listMount');
+            errBox.textContent = '';
+            const btn = document.getElementById('listLoadBtn');
+            btn.disabled = true;
+            mount.innerHTML = '<p>Loading…</p>';
+
+            fetchRange(start, end, document.getElementById('refreshPastFromApiList').checked).then(function (data) {
+                const todayStr = getTodayLocal();
+                let sumCust = 0, sumMin = 0, sumAppt = 0, sumOnline = 0, sumByUs = 0;
+                const rows = (data.days || []).map(function (row) {
+                    sumCust += row.customer_count;
+                    sumMin += row.total_minutes;
+                    sumAppt += row.appointment_count;
+                    sumOnline += Number(row.booked_online_count) || 0;
+                    sumByUs += Number(row.booked_by_us_count) || 0;
+                    const apptN = Number(row.appointment_count) || 0;
+                    const isFutureEmpty = row.date > todayStr && apptN === 0;
+                    const cTd = isFutureEmpty ? '' : String(row.customer_count);
+                    const aTd = isFutureEmpty ? '' : String(row.appointment_count);
+                    const oTd = isFutureEmpty ? '' : String(Number(row.booked_online_count) || 0);
+                    const uTd = isFutureEmpty ? '' : String(Number(row.booked_by_us_count) || 0);
+                    const tTd = isFutureEmpty ? '' : formatHrsMins(row.total_minutes);
+                    const trCls = row.date > todayStr ? ' class="list-row-future"' : '';
+                    return '<tr' + trCls + '><td>' + row.date + '</td><td>' + cTd + '</td><td>' + aTd + '</td><td>' + oTd + '</td><td>' + uTd + '</td><td>' + tTd + '</td></tr>';
+                }).join('');
+                mount.innerHTML =
+                    '<table class="report"><thead><tr><th>Date</th><th>Customers (2 if couple)</th><th>Appointments</th><th title="Booked online (customer)">Online 💻</th><th title="Booked by us (staff)">By us 📞</th><th>Booked time</th></tr></thead>' +
+                    '<tbody>' + rows + '</tbody>' +
+                    '<tfoot><tr><td>Totals (sum of days)</td><td>' + sumCust + '</td><td>' + sumAppt + '</td><td>' + sumOnline + '</td><td>' + sumByUs + '</td><td>' + formatHrsMins(sumMin) + '</td></tr></tfoot></table>' +
+                    '<p class="sub" style="margin-top:10px">Customer column total is the sum of daily unique counts, not unique people across the whole range.</p>';
+            }).catch(function (e) {
+                errBox.innerHTML = '<div class="err">' + (e.message || String(e)) + '</div>';
+                mount.innerHTML = '';
+            }).finally(function () {
+                btn.disabled = false;
+            });
+        }
+
+        document.querySelectorAll('.tab').forEach(function (t) {
+            t.addEventListener('click', function () {
+                document.querySelectorAll('.tab').forEach(function (x) { x.classList.remove('active'); });
+                document.querySelectorAll('.panel').forEach(function (x) { x.classList.remove('active'); });
+                t.classList.add('active');
+                document.getElementById('panel-' + t.dataset.panel).classList.add('active');
+                document.getElementById('errBox').textContent = '';
+            });
+        });
+
+        (function init() {
+            const today = getTodayLocal();
+            document.getElementById('calEndMonth').value = today.slice(0, 7);
+            document.getElementById('calMonthsBack').value = '2';
+            clampMonthsBackInput();
+            syncListDefaultsFromCalendar();
+
+            document.getElementById('calEndMonth').addEventListener('change', function () {
+                setQuickRangeSelect(QUICK_CUSTOM);
+                syncListDefaultsFromCalendar();
+            });
+            document.getElementById('calMonthsBack').addEventListener('input', function () {
+                setQuickRangeSelect(QUICK_CUSTOM);
+                syncListDefaultsFromCalendar();
+            });
+            document.getElementById('calMonthsBack').addEventListener('change', function () {
+                clampMonthsBackInput();
+                syncListDefaultsFromCalendar();
+            });
+
+            document.getElementById('calQuickRange').addEventListener('change', function () {
+                const v = document.getElementById('calQuickRange').value;
+                if (v === QUICK_CUSTOM) return;
+                applyQuickRangePreset(v);
+                const n = clampMonthsBackInput();
+                syncListDefaultsFromCalendar();
+                renderCalendar(document.getElementById('calEndMonth').value, n);
+            });
+
+            document.getElementById('calLoadBtn').addEventListener('click', function () {
+                const n = clampMonthsBackInput();
+                renderCalendar(document.getElementById('calEndMonth').value, n);
+            });
+            document.getElementById('listLoadBtn').addEventListener('click', function () {
+                const a = document.getElementById('listStart').value;
+                const b = document.getElementById('listEnd').value;
+                if (!a || !b) return;
+                if (b < a) {
+                    document.getElementById('errBox').innerHTML = '<div class="err">End date must be on or after start date.</div>';
+                    return;
+                }
+                renderList(a, b);
+            });
+
+            renderCalendar(document.getElementById('calEndMonth').value, clampMonthsBackInput());
+        })();
+    </script>
+</body>
+</html>

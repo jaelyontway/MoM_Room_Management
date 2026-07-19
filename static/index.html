@@ -2,42 +2,621 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="theme-color" content="#007bff">
     <title>Spa Room Management Dashboard</title>
-    <link rel="stylesheet" href="/static/style.css?v=11">
+    <link rel="stylesheet" href="/static/style.css?v=163">
 </head>
 <body>
     <div class="container">
-        <header class="header">
-            <div class="header-top">
-                <h1>Spa Room Management Dashboard</h1>
-                <div id="apiStatus" class="api-status"></div>
-            </div>
-            <div class="controls">
-                <label for="dateInput">Date:</label>
-                <input type="date" id="dateInput" value="">
-                <button id="loadBtn" onclick="loadDay()">Load Day</button>
-                <button id="refreshBtn" onclick="refreshDay()">Refresh</button>
+        <header class="header header-compact">
+            <div class="header-row header-row-branding">
+                <div class="header-left-cluster">
+                    <div class="header-logo-wrap">
+                        <span class="header-logo-inner">
+                            <img src="/static/massage-on-main-logo.png" alt="Massage on Main" class="header-brand-logo" width="240" height="36" decoding="async" onerror="this.onerror=null;this.src='/static/mom-brand-logo.svg'">
+                        </span>
+                    </div>
+                    <h1 class="header-title"><span data-i18n="header.title">Spa Room Management</span></h1>
+                </div>
+                <div class="header-center-cluster">
+                    <div class="staffing-cluster staffing-cluster--stacked" id="staffingCluster">
+                        <div class="staffing-row">
+                            <label class="staffing-label staffing-label--split" for="masseusesTodaySelect">
+                                <button type="button" class="staffing-link" id="staffingMassageNamesBtn" data-i18n="staff.staffTodayLink">Staff</button><span class="staffing-label-rest" data-i18n="staff.staffTodayRest">today</span>
+                            </label>
+                            <select id="masseusesTodaySelect" class="staffing-select" data-i18n-aria="staff.staffTodayAria" aria-label="Massage therapists scheduled today">
+                                <option value="1">1</option>
+                                <option value="2">2</option>
+                                <option value="3">3</option>
+                                <option value="4" selected>4</option>
+                                <option value="5">5</option>
+                                <option value="6">6</option>
+                                <option value="7">7</option>
+                                <option value="8">8</option>
+                                <option value="9">9</option>
+                            </select>
+                        </div>
+                        <div class="staffing-row">
+                            <label class="staffing-label staffing-label--split" for="facialSpecialistsTodaySelect">
+                                <button type="button" class="staffing-link" id="staffingFacialNamesBtn" data-i18n="staff.facialSpecialistsLink">Facial specialists</button><span class="staffing-label-rest" data-i18n="staff.facialSpecialistsRest">today</span>
+                            </label>
+                            <select id="facialSpecialistsTodaySelect" class="staffing-select" data-i18n-aria="staff.facialSpecialistsTodayAria" aria-label="Facial specialists scheduled today">
+                                <option value="0">0</option>
+                                <option value="1">1</option>
+                                <option value="2" selected>2</option>
+                                <option value="3">3</option>
+                                <option value="4">4</option>
+                                <option value="5">5</option>
+                                <option value="6">6</option>
+                                <option value="7">7</option>
+                                <option value="8">8</option>
+                                <option value="9">9</option>
+                            </select>
+                        </div>
+                    </div>
+                    <button type="button" id="checkinCheckoutBtn" class="checkin-checkout-btn" data-i18n-title="btn.checkinCheckoutTitle" title="Show or hide check-in and checkout panels" aria-expanded="false" aria-controls="checkinPanel checkoutPanel">
+                        <span class="checkin-checkout-label checkin-checkout-label--desktop" data-i18n-html="btn.checkinCheckout">Check-In<br>Check-Out</span>
+                        <span class="checkin-checkout-label checkin-checkout-label--mobile" data-i18n-html="btn.checkinCheckout">Check-In<br>Check-Out</span>
+                    </button>
+                    <div class="header-date-inline">
+                        <div class="date-quick-cluster">
+                            <div class="date-quick-tabs" role="tablist" data-i18n-aria="date.quickTabsAria" aria-label="Jump to today or the next three days">
+                                <button type="button" role="tab" class="date-quick-tab" data-day-offset="0" id="dateQuickTab0" data-i18n-title="date.quickTabTodayTitle" title="Selected calendar day is today">Today</button>
+                                <button type="button" role="tab" class="date-quick-tab" id="dateQuickTab1" data-day-offset="1" title=""></button>
+                                <button type="button" role="tab" class="date-quick-tab" id="dateQuickTab2" data-day-offset="2" title=""></button>
+                                <button type="button" role="tab" class="date-quick-tab" id="dateQuickTab3" data-day-offset="3" title=""></button>
+                            </div>
+                            <span class="date-nav">
+                                <span class="date-input-box date-input-box--icon-only">
+                                    <input type="date" id="dateInput" value="" class="date-input-sr-only" data-i18n-aria="label.dateAria" aria-label="Date" tabindex="-1">
+                                    <button type="button" id="dateOpenPickerBtn" class="date-calendar-icon-btn" data-i18n-title="date.openPickerTitle" data-i18n-aria="date.calendarIconAria" title="Open calendar to pick a date" aria-label="Open calendar">📅</button>
+                                </span>
+                                <span id="dayLoadStatus" class="day-load-status" hidden aria-live="polite" aria-atomic="true">
+                                    <span id="dayLoadStatusMain" class="day-load-status-main"></span>
+                                    <span id="dayLoadStatusSub" class="day-load-status-sub"></span>
+                                </span>
+                            </span>
+                        </div>
+                    </div>
+                    <span class="header-daylist-btns">
+                        <button type="button" id="todayAppointmentsListBtn" class="today-appointments-btn" data-i18n="btn.todayAppointments" data-i18n-title="btn.todayAppointmentsTitle" title="View and export the selected day’s appointments">Day list</button>
+                        <span class="header-day-lock-stack">
+                            <button type="button" id="dayLayoutLockFromTimeBtn" class="header-day-lock-from-time-btn" data-i18n="dayLayout.lockFromTime" data-i18n-title="dayLayout.lockFromTimeTitle" title="Lock only appointments starting at or after a time (leave earlier auto-assignments unpinned)">Lock from a time…</button>
+                        </span>
+                        <button type="button" id="newAppointmentsListBtn" class="today-appointments-btn today-appointments-btn--secondary" hidden data-i18n="btn.newAppointments" data-i18n-title="btn.newAppointmentsTitle" title="Recently booked Square appointments">New Appointments</button>
+                    </span>
+                    <div id="historySquareResyncWrap" class="history-square-resync-wrap" hidden>
+                        <button type="button" id="historySquareResyncBtn" class="history-square-resync-btn" onclick="historySquareResyncFromSquare()"></button>
+                    </div>
+                </div>
+                <div class="top-bar-row top-bar-row-summaries">
+                    <details id="momPhoneSummariesDetails" class="mom-phone-summaries-details" open>
+                        <summary class="mom-phone-summaries-summary">
+                            <span class="mom-phone-summaries-summary-sr" data-i18n="summaries.phoneFoldSr">Requested therapist list and facial schedule</span>
+                            <span class="mom-phone-summaries-summary-label" data-i18n="summaries.phoneFoldLabel">Requested therapist · Facials</span>
+                            <span class="mom-phone-summaries-chevron" aria-hidden="true">▼</span>
+                        </summary>
+                        <div class="mom-phone-summaries-body-inner">
+                            <div id="customerRequestsPanel" class="customer-requests-panel" style="display: none;">
+                                <div class="customer-requests-panel-inner">
+                                    <button type="button" id="customerRequestsToggle" class="customer-requests-toggle" aria-expanded="true" aria-controls="customerRequestsBar" title="Hide requested therapist list">
+                                        <span class="customer-requests-toggle-icon" aria-hidden="true">▼</span>
+                                    </button>
+                                    <div id="customerRequestsBar" class="customer-requests-bar"></div>
+                                </div>
+                            </div>
+                            <div id="facialSummaryBar" class="facial-summary-bar facial-summary-box" style="display: none;"></div>
+                            <div id="nextAvailable" class="next-available next-available--inline next-room-availability-box" style="display: none;"></div>
+                            <div id="therapistOrderBar" class="therapist-order-bar" style="display: none;"></div>
+                        </div>
+                    </details>
+                </div>
+                <div class="controls">
+                    <button type="button" id="squareOriHintToggle" class="square-ori-hint-toggle" data-i18n="btn.squareOriHint" data-i18n-title="btn.squareOriHintTitle" aria-pressed="false" title="Show Square-booked masseuse (first 3 letters) as a light watermark on each appointment card">ORI</button>
+                    <label id="dayLayoutFreezeWrap" class="day-layout-freeze-icon-btn header-day-layout-freeze" data-i18n-title="dayLayout.freezeLabel">
+                        <input type="checkbox" id="dayLayoutFreezeCb" data-i18n-aria="dayLayout.freezeAria" aria-label="Lock appointments for the day" />
+                        <span class="day-layout-freeze-icon" aria-hidden="true">🔒</span>
+                    </label>
+                    <button id="loadBtn" onclick="loadDay()" data-i18n="btn.load">Load</button>
+                    <button id="refreshBtn" onclick="refreshDay()" data-i18n="btn.refresh">Refresh</button>
+                    <div class="view-toggle-with-phone-peek">
+                        <button type="button" id="viewToggleBtn" class="view-toggle-combined" data-i18n-title="view.toggleTitle" title="Toggle calendar view">
+                            <span class="view-toggle-line view-toggle-room" data-i18n="view.byRoom">By Room</span>
+                            <span class="view-toggle-line view-toggle-masseuse" data-i18n="view.byMasseuse">By Masseuse</span>
+                        </button>
+                        <details id="desktopPhonePeekDetails" class="desktop-phone-peek-details">
+                            <summary class="desktop-phone-peek-summary" data-i18n="desktopPhonePeek.summary" data-i18n-title="desktopPhonePeek.summaryTitle" title="Open the same narrow list or checkout in a movable window">Mobile List</summary>
+                            <div class="desktop-phone-peek-menu" role="group" data-i18n-aria="desktopPhonePeek.menuAria" aria-label="Open mobile-style list or checkout">
+                                <button type="button" class="desktop-phone-peek-item" id="desktopPhonePeekOpenList" data-i18n="phoneCal.list">Mobile List</button>
+                                <button type="button" class="desktop-phone-peek-item" id="desktopPhonePeekOpenCheckout" data-i18n="phoneCal.checkout">Mobile Checkout</button>
+                            </div>
+                        </details>
+                    </div>
+                    <span class="controls-trailing-cluster">
+                        <span class="lang-toggle-slot">
+                            <button type="button" id="langToggleBtn" class="lang-toggle-btn" title="Language" aria-label="Language">EN</button>
+                        </span>
+                        <div class="header-toolbar-links">
+                            <button type="button" id="headerToolbarLinksToggle" class="header-toolbar-links-toggle" aria-expanded="true" aria-controls="headerToolbarLinksPanel" title="Hide report links and API status" aria-label="Hide report links and API status">
+                                <span class="header-toolbar-links-toggle-icon" aria-hidden="true">▼</span>
+                            </button>
+                            <div id="headerToolbarLinksPanel" class="header-toolbar-links-panel">
+                                <button type="button" class="reports-link reports-link--button header-toolbar-menu-daylist" id="todayAppointmentsMenuBtn" data-i18n="btn.todayAppointments" data-i18n-title="btn.todayAppointmentsTitle" title="View and export the selected day’s appointments">Day list</button>
+                                <button type="button" class="reports-link reports-link--button" id="undoRoomMenuBtn" style="display: none;" data-i18n="btn.undoRoom" data-i18n-title="btn.undoRoomTitle" title="Undo last room change for this day" onclick="undoRoomChange()">Undo room change</button>
+                                <a href="/static/reports.html" class="reports-link" target="_blank" data-i18n="link.masseuseReport">Masseuse report</a>
+                                <a href="/static/customers_hours_report.html" class="reports-link" target="_blank" data-i18n="link.customersHoursReport">Customers & hours</a>
+                                <a href="/static/services_report.html" class="reports-link" target="_blank" data-i18n="link.serviceSummary">Service summary</a>
+                                <a href="/static/grid.html" target="_blank" rel="noopener" class="reports-link" id="dailyGridBtn" data-i18n="link.dailyGrid" data-i18n-title="link.dailyGridTitle" title="Open daily grid sheet by masseuse (3×3)" onclick="openDailyGrid(event)">Daily grid</a>
+                                <a href="/static/services.html" class="reports-link" target="_blank" data-i18n="link.servicesPay">Services & Pay</a>
+                                <a href="/static/checkin.html" class="reports-link" target="_blank" data-i18n="link.checkinKiosk" data-i18n-title="link.checkinKioskTitle" title="Customer check-in kiosk">Check-in</a>
+                                <a href="/static/glossary_en_zh.html" class="reports-link" target="_blank" rel="noopener" data-i18n="link.glossary" data-i18n-title="link.glossaryTitle" title="English–Chinese terms used on dashboard, check-in, and massage menu text">EN ↔ 中文 glossary</a>
+                                <button type="button" class="reports-link reports-link--button" id="availabilityAuditBtn" data-i18n="link.availabilityAudit" data-i18n-title="link.availabilityAuditTitle" title="Compare Square online slots to physical rooms for the selected day">Square vs rooms</button>
+                                <button type="button" class="lan-share-open-btn" id="lanShareOpenBtn" data-i18n="lanShare.menuBtn" data-i18n-title="lanShare.menuTitle" title="Show a QR code and link to open this dashboard on another device on the same Wi‑Fi">Phone / tablet link</button>
+                                <div id="apiStatus" class="api-status"></div>
+                            </div>
+                        </div>
+                    </span>
+                </div>
+                <div id="phoneCalendarViewBar" class="phone-calendar-view-bar" hidden>
+                    <div class="phone-calendar-view-toggle" role="group" data-i18n-aria="phoneCal.toggleAria" aria-label="Mobile calendar layout">
+                        <button type="button" id="phoneCalendarListBtn" class="phone-calendar-view-seg" data-i18n="phoneCal.list">Mobile List</button>
+                        <button type="button" id="phoneCalendarCheckoutBtn" class="phone-calendar-view-seg" data-i18n="phoneCal.checkout">Mobile Checkout</button>
+                        <button type="button" id="phoneCalendarGridBtn" class="phone-calendar-view-seg" data-i18n="phoneCal.grid">Mobile Grid</button>
+                    </div>
+                </div>
             </div>
         </header>
-
         <div id="errorMessage" class="error-message" style="display: none;"></div>
         <div id="noBookingsMessage" class="no-bookings-message" style="display: none;"></div>
+        <div id="noRoomsAlertContainer" class="no-rooms-alert no-rooms-alert-collapsed" style="display: none;">
+            <div class="no-rooms-alert-header" role="button" tabindex="0" aria-expanded="false" data-i18n-title="noRooms.headerTitle" title="Click to expand or collapse">
+                <span class="no-rooms-alert-title" data-i18n="noRooms.title">Block time on Square (no room / limited rooms)</span>
+                <span class="no-rooms-alert-arrow" aria-hidden="true">▼</span>
+            </div>
+            <div class="no-rooms-alert-body">
+                <div class="no-rooms-alert-message"></div>
+            </div>
+        </div>
+        <div id="noRoomBookingAlertContainer" class="no-room-booking-alert" style="display: none;">
+            <div class="no-room-booking-alert-inner">
+                <div class="no-room-booking-alert-message"></div>
+                <button type="button" class="no-room-booking-alert-dismiss" data-i18n-title="btn.dismiss" data-i18n-aria="btn.dismiss" title="Dismiss" aria-label="Dismiss">×</button>
+            </div>
+        </div>
+        <div id="therapistRequestOverlapAlertContainer" class="therapist-request-overlap-alert" style="display: none;">
+            <div class="therapist-request-overlap-alert-inner">
+                <div class="therapist-request-overlap-alert-message"></div>
+                <button type="button" class="therapist-request-overlap-alert-dismiss" data-i18n-title="btn.dismiss" data-i18n-aria="btn.dismiss" title="Dismiss" aria-label="Dismiss">×</button>
+            </div>
+        </div>
+        <div id="cancelledAlertsContainer" class="cancelled-alerts-container" style="display: none;"></div>
+        <div id="rescheduleAlertsContainer" class="reschedule-alerts-container" style="display: none;"></div>
 
         <div id="loading" class="loading" style="display: none;">
-            Loading...
+            <span data-i18n="loading">Loading...</span>
+            <div id="loadingDateDetail" class="loading-date-detail" hidden></div>
         </div>
 
         <div id="calendarContainer" class="calendar-container" style="display: none;">
-            <div id="calendarGrid" class="calendar-grid"></div>
+            <div id="calendarFullscreenBar" class="calendar-fullscreen-bar" aria-hidden="true">
+                <span id="calendarFullscreenDateLabel" class="calendar-fullscreen-date"></span>
+                <button type="button" id="calendarExitFullscreenBtn" class="calendar-exit-fullscreen-btn" data-i18n-title="calendar.exitFullscreenTitle" data-i18n-aria="calendar.exitFullscreenAria" title="Exit full screen (Esc)" aria-label="Exit full screen">×</button>
+            </div>
+            <div id="calendarScrollViewport" class="calendar-scroll-viewport">
+                <div id="calendarZoomBar" class="calendar-zoom-bar">
+                    <span class="calendar-zoom-label" data-i18n="zoom.label">Zoom:</span>
+                    <button type="button" id="calendarZoomOut" class="calendar-zoom-btn" data-i18n-title="zoom.outTitle" title="Zoom out (see more)">−</button>
+                    <span id="calendarZoomValue" class="calendar-zoom-value">100%</span>
+                    <button type="button" id="calendarZoomIn" class="calendar-zoom-btn" data-i18n-title="zoom.inTitle" title="Zoom in">+</button>
+                    <span class="calendar-zoom-spacer" aria-hidden="true"></span>
+                    <button type="button" id="undoRoomBtn" class="calendar-toolbar-action calendar-toolbar-action--undo" style="display: none;" data-i18n="btn.undoRoom" data-i18n-title="btn.undoRoomTitle" title="Undo last room change for this day" onclick="undoRoomChange()">Undo room change</button>
+                    <button type="button" id="calendarScreenshotBtn" class="calendar-toolbar-action calendar-toolbar-action--muted" data-i18n="calendarScreenshot.capture" data-i18n-title="calendarScreenshot.captureTitle" title="Save a picture of the whole calendar for the day shown in the date picker">Screenshot day</button>
+                    <button type="button" id="calendarScreenshotsGalleryBtn" class="calendar-toolbar-action calendar-toolbar-action--muted" data-i18n="calendarScreenshot.gallery" data-i18n-title="calendarScreenshot.galleryTitle" title="View saved calendar screenshots">Screenshots</button>
+                    <button type="button" id="calendarEnterFullscreenBtn" class="calendar-toolbar-action calendar-toolbar-action--fullscreen" data-i18n="calendar.enterFullscreen" data-i18n-title="calendar.enterFullscreenTitle" title="Use the whole screen for the calendar">Full screen</button>
+                </div>
+                <div id="phoneCalendarListWrap" class="phone-calendar-list-wrap" hidden></div>
+                <div id="calendarGridScrollRegion" class="calendar-grid-scroll-region">
+                    <div id="calendarGrid" class="calendar-grid"></div>
+                </div>
+            </div>
         </div>
 
         <div id="unassignedContainer" class="unassigned-container" style="display: none;">
-            <h2>⚠️ Unassigned Bookings</h2>
+            <h2 data-i18n="unassigned.title">⚠️ Unassigned Bookings</h2>
             <div id="unassignedList"></div>
+        </div>
+
+        <!-- Check-in panel (left): appointments starting at selected time -->
+        <div id="checkinPanel" class="checkin-checkout-panel checkin-panel" style="display: none;">
+            <div class="checkin-checkout-header">
+                <div class="checkin-checkout-header-top">
+                    <span class="checkin-checkout-title" data-i18n="panel.checkins">Check-In</span>
+                    <div class="checkin-checkout-note-lang-toggle" role="group" data-i18n-aria="deskNote.panelPreviewLangAria" aria-label="Language for desk note previews">
+                        <button type="button" class="desk-note-lang-btn" data-desk-note-lang="en" data-i18n-title="deskNote.langEnTitle" title="Show desk note previews in English">EN</button>
+                        <button type="button" class="desk-note-lang-btn" data-desk-note-lang="zh" data-i18n-title="deskNote.langZhTitle" title="Show desk note previews in Chinese">中文</button>
+                    </div>
+                    <button type="button" class="checkin-checkout-minimize" data-i18n-title="panel.minimize" title="Minimize">−</button>
+                    <button type="button" class="checkin-checkout-close" data-i18n-title="panel.close" title="Close">×</button>
+                </div>
+                <div id="checkinStaffPoolStrip" class="checkin-staff-pool-strip" style="display: none;" aria-live="polite">
+                    <div class="checkin-staff-pool-strip-inner"></div>
+                </div>
+                <div class="checkin-checkout-header-bottom">
+                    <span class="checkin-checkout-time-nav">
+                        <button type="button" class="checkin-checkout-time-arrow" id="checkinTimePrev" data-i18n-title="time.prevTitle" data-i18n-aria="time.prevTitle" title="Previous (30 min)" aria-label="Previous time">‹</button>
+                        <select id="checkinTimeSelect" class="checkin-checkout-time-select" data-i18n-title="time.changeTitle" title="Change time"></select>
+                        <button type="button" class="checkin-checkout-time-arrow" id="checkinTimeNext" data-i18n-title="time.nextTitle" data-i18n-aria="time.nextTitle" title="Next (30 min)" aria-label="Next time">›</button>
+                        <button type="button" class="checkin-checkout-time-now-btn" id="checkinTimeNow" data-i18n="time.nowBtn" data-i18n-title="time.nowTitle" data-i18n-aria="time.nowTitle" title="Jump to current time (30-minute slot)" aria-label="Jump to current time">Now</button>
+                        <label class="checkin-checkout-time-sync">
+                            <input type="checkbox" id="checkinCheckoutTimeSync" data-i18n-title="time.syncCheckoutTitle" title="When checked, changing the time on Check-In or Check-Out updates both panels." />
+                            <span data-i18n="time.syncCheckout">Sync with checkout</span>
+                        </label>
+                    </span>
+                </div>
+            </div>
+            <div class="checkin-checkout-body">
+                <div id="checkinPanelList" class="checkin-checkout-list"></div>
+            </div>
+        </div>
+        <!-- Checkout panel (right): appointments ending at selected time; tip + masseuse -->
+        <div id="checkoutPanel" class="checkin-checkout-panel checkout-panel" style="display: none;">
+            <div class="checkin-checkout-header">
+                <div class="checkin-checkout-header-top">
+                    <span class="checkin-checkout-title" data-i18n="panel.checkouts">Check-Out</span>
+                    <div class="checkin-checkout-note-lang-toggle" role="group" data-i18n-aria="deskNote.panelPreviewLangAria" aria-label="Language for desk note previews">
+                        <button type="button" class="desk-note-lang-btn" data-desk-note-lang="en" data-i18n-title="deskNote.langEnTitle" title="Show desk note previews in English">EN</button>
+                        <button type="button" class="desk-note-lang-btn" data-desk-note-lang="zh" data-i18n-title="deskNote.langZhTitle" title="Show desk note previews in Chinese">中文</button>
+                    </div>
+                    <button type="button" class="checkin-checkout-minimize" data-i18n-title="panel.minimize" title="Minimize">−</button>
+                    <button type="button" class="checkin-checkout-close" data-i18n-title="panel.close" title="Close">×</button>
+                </div>
+                <div class="checkin-checkout-header-bottom">
+                    <span class="checkin-checkout-time-nav">
+                        <button type="button" class="checkin-checkout-time-arrow" id="checkoutTimePrev" data-i18n-title="time.prevTitle" data-i18n-aria="time.prevTitle" title="Previous (30 min)" aria-label="Previous time">‹</button>
+                        <select id="checkoutTimeSelect" class="checkin-checkout-time-select" data-i18n-title="time.changeTitle" title="Change time"></select>
+                        <button type="button" class="checkin-checkout-time-arrow" id="checkoutTimeNext" data-i18n-title="time.nextTitle" data-i18n-aria="time.nextTitle" title="Next (30 min)" aria-label="Next time">›</button>
+                        <button type="button" class="checkin-checkout-time-now-btn" id="checkoutTimeNow" data-i18n="time.nowBtn" data-i18n-title="time.nowTitle" data-i18n-aria="time.nowTitle" title="Jump to current time (30-minute slot)" aria-label="Jump to current time">Now</button>
+                    </span>
+                </div>
+            </div>
+            <div class="checkin-checkout-body">
+                <div id="checkoutPanelList" class="checkin-checkout-list"></div>
+            </div>
+        </div>
+
+        <div id="appointmentDetailModal" class="appointment-detail-modal" style="display: none;" aria-hidden="true">
+            <div class="appointment-detail-backdrop"></div>
+            <div class="appointment-detail-content">
+                <div class="appointment-detail-header" data-i18n-title="modal.appointmentDragTitle" title="Drag to move this window">
+                    <h3 data-i18n="modal.appointmentTitle">Appointment details</h3>
+                    <button type="button" class="appointment-detail-close" data-i18n-title="panel.close" title="Close">&times;</button>
+                </div>
+                <div id="appointmentDetailBody" class="appointment-detail-body"></div>
+            </div>
+        </div>
+
+        <!-- Next available (when each masseuse is free) popup -->
+        <div id="nextAvailableModal" class="focus-area-modal next-available-modal" style="display: none;" aria-hidden="true">
+            <div class="focus-area-backdrop"></div>
+            <div class="focus-area-content">
+                <div class="focus-area-header">
+                    <h3 data-i18n="modal.nextAvailableTitle">Next available</h3>
+                    <button type="button" class="focus-area-close" data-i18n-title="panel.close" title="Close">&times;</button>
+                </div>
+                <div class="focus-area-body">
+                    <p class="next-available-intro" data-i18n="modal.nextAvailableIntro">At the selected check-in time, when each masseuse's current appointment ends:</p>
+                    <ul id="nextAvailableList" class="next-available-list"></ul>
+                </div>
+            </div>
+        </div>
+        <!-- Focus area popup for check-in/checkout -->
+        <div id="focusAreaModal" class="focus-area-modal checkin-checkout-popup" style="display: none;" aria-hidden="true">
+            <div class="focus-area-backdrop"></div>
+            <div class="focus-area-content">
+                <div class="focus-area-header">
+                    <h3 data-i18n="modal.focusTitle">Check-In Check-Out — Focus area</h3>
+                    <button type="button" class="focus-area-close" data-i18n-title="panel.close" title="Close">&times;</button>
+                </div>
+                <div class="focus-area-body">
+                    <div id="focusAreaBodyDiagram" class="focus-area-body-diagram" aria-hidden="true">
+                        <div class="focus-area-diagram-frame">
+                            <img src="/static/body-diagram.png" alt="Body diagram: front, back, left and right views for selecting focus areas" class="focus-area-body-img" data-i18n-alt="focus.bodyAlt" />
+                            <div id="focusAreaDiagramOverlays" class="focus-area-diagram-overlays"></div>
+                        </div>
+                    </div>
+                    <div id="focusAreaCheckboxes" class="focus-area-checkboxes"></div>
+                    <div id="focusAreaSideRow" class="focus-area-side-row" role="radiogroup" aria-label="Side">
+                        <span class="focus-area-side-label" data-i18n="focus.sideLabel">Side (if needed):</span>
+                        <label class="focus-area-side-opt"><input type="radio" name="focusAreaSide" value="" checked /> <span data-i18n="focus.sideBoth">Both / not specified</span></label>
+                        <label class="focus-area-side-opt"><input type="radio" name="focusAreaSide" value="Left" /> <span data-i18n="focus.sideLeft">Left</span></label>
+                        <label class="focus-area-side-opt"><input type="radio" name="focusAreaSide" value="Right" /> <span data-i18n="focus.sideRight">Right</span></label>
+                    </div>
+                    <label class="focus-area-other-wrap">
+                        <span data-i18n="focus.otherLabel">Other / write-in:</span>
+                        <input type="text" id="focusAreaOther" class="focus-area-other-input" data-i18n-placeholder="focus.otherPlaceholder" placeholder="e.g. jaw, glutes" />
+                    </label>
+                    <div class="focus-area-actions">
+                        <button type="button" class="focus-area-save-btn" data-i18n="btn.save">Save</button>
+                        <button type="button" class="focus-area-cancel-btn" data-i18n="btn.cancel">Cancel</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <!-- Front desk quick note (check-in / check-out), saved per customer -->
+        <div id="customerDeskNoteModal" class="customer-desk-note-modal checkin-checkout-popup" style="display: none;" aria-hidden="true">
+            <div class="customer-desk-note-backdrop"></div>
+            <div class="customer-desk-note-content">
+                <div class="focus-area-header">
+                    <h3 id="customerDeskNoteModalTitle">Desk note</h3>
+                    <button type="button" class="focus-area-close customer-desk-note-close" data-i18n-title="panel.close" title="Close">&times;</button>
+                </div>
+                <div class="customer-desk-note-body">
+                    <textarea id="customerDeskNoteTextarea" class="customer-desk-note-textarea" maxlength="4000" rows="6" placeholder=""></textarea>
+                    <div class="customer-desk-note-actions">
+                        <button type="button" class="customer-desk-note-save-btn" data-i18n="btn.save">Save</button>
+                        <button type="button" class="customer-desk-note-cancel-btn" data-i18n="btn.cancel">Cancel</button>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
 
-    <script src="/static/app.js?v=17"></script>
+        <div id="todayAppointmentsModal" class="today-appointments-modal" style="display: none;" aria-hidden="true">
+            <div class="today-appointments-backdrop" id="todayAppointmentsBackdrop"></div>
+            <div class="today-appointments-dialog" role="dialog" aria-modal="true" aria-labelledby="todayAppointmentsModalTitle">
+                <div class="today-appointments-header">
+                    <h2 id="todayAppointmentsModalTitle" class="today-appointments-title" data-i18n="todayAppts.title">Today’s appointments</h2>
+                    <button type="button" class="today-appointments-close" id="todayAppointmentsCloseBtn" data-i18n-title="panel.close" title="Close" aria-label="Close">&times;</button>
+                </div>
+                <p id="todayAppointmentsEmpty" class="today-appointments-empty" hidden data-i18n="todayAppts.empty">Load the calendar for this date to see appointments.</p>
+                <div class="today-appointments-toolbar">
+                    <div class="today-appointments-toolbar-inner">
+                        <div class="today-appointments-pin-wrap">
+                            <label for="todayAppointmentsPinInput" class="today-appointments-pin-label" data-i18n="todayAppts.pinLabel">PIN (unlock past for detail)</label>
+                            <input type="password" id="todayAppointmentsPinInput" class="today-appointments-pin-input" maxlength="32" autocomplete="off" data-i18n-placeholder="todayAppts.pinPlaceholder" placeholder="PIN" />
+                            <button type="button" id="todayAppointmentsPinSubmitBtn" class="today-appointments-pin-btn" data-i18n="todayAppts.pinApply">Apply</button>
+                            <span id="todayAppointmentsPinStatus" class="today-appointments-pin-status" aria-live="polite"></span>
+                        </div>
+                        <button type="button" id="todayAppointmentsExportBtn" class="today-appointments-export-btn" data-i18n="todayAppts.exportExcel" data-i18n-title="todayAppts.exportExcelTitle" title="Download a UTF-8 CSV file that opens in Excel">Export for Excel (.csv)</button>
+                    </div>
+                </div>
+                <div id="todayAppointmentsTableWrap" class="today-appointments-table-wrap" hidden>
+                    <table class="today-appointments-table" aria-describedby="todayAppointmentsModalTitle">
+                        <thead>
+                            <tr>
+                                <th class="today-appts-col-edit" data-i18n="todayAppts.colEdit">Edit</th>
+                                <th data-i18n="todayAppts.colStart">Start</th>
+                                <th data-i18n="todayAppts.colEnd">End</th>
+                                <th data-i18n="todayAppts.colLength">Length (min)</th>
+                                <th class="today-appts-col-room" data-i18n="todayAppts.colRoom">Room</th>
+                                <th data-i18n="todayAppts.colCustomer">Customer</th>
+                                <th data-i18n="todayAppts.colRequested">Requested masseuse</th>
+                                <th data-i18n="todayAppts.colService">Service (calendar)</th>
+                                <th data-i18n="todayAppts.colNotes">Notes</th>
+                                <th class="today-appts-col-assigned" data-i18n="todayAppts.colAssigned">Assigned therapists</th>
+                            </tr>
+                        </thead>
+                        <tbody id="todayAppointmentsTbody"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        <div id="newAppointmentsModal" class="today-appointments-modal" style="display: none;" aria-hidden="true">
+            <div class="today-appointments-backdrop" id="newAppointmentsBackdrop"></div>
+            <div class="today-appointments-dialog today-appointments-dialog--new-appts" role="dialog" aria-modal="true" aria-labelledby="newAppointmentsModalTitle">
+                <div class="today-appointments-header">
+                    <h2 id="newAppointmentsModalTitle" class="today-appointments-title" data-i18n="newAppts.title">New Appointments (Square)</h2>
+                    <button type="button" class="today-appointments-close" id="newAppointmentsCloseBtn" data-i18n-title="panel.close" title="Close" aria-label="Close">&times;</button>
+                </div>
+                <p id="newAppointmentsMockBanner" class="new-appts-mock-banner" hidden data-i18n="newAppts.mockBanner">Demo data</p>
+                <p id="newAppointmentsEmpty" class="today-appointments-empty" hidden data-i18n="newAppts.empty">No bookings returned.</p>
+                <div class="today-appointments-toolbar">
+                    <div class="today-appointments-toolbar-inner">
+                        <div class="new-appts-toolbar-controls">
+                            <label for="newAppointmentsLimitSelect" class="new-appts-limit-label"><span data-i18n="newAppts.limitLabel">Show</span>
+                                <select id="newAppointmentsLimitSelect" class="new-appts-limit-select" aria-label="Row count">
+                                    <option value="10">10</option>
+                                    <option value="20">20</option>
+                                    <option value="30">30</option>
+                                </select>
+                                <span data-i18n="newAppts.limitSuffix">rows</span>
+                            </label>
+                            <button type="button" id="newAppointmentsRefreshBtn" class="today-appointments-pin-btn" data-i18n="newAppts.refresh">Refresh</button>
+                        </div>
+                        <button type="button" id="newAppointmentsExportBtn" class="today-appointments-export-btn" data-i18n="newAppts.exportExcel" data-i18n-title="newAppts.exportExcelTitle" title="Download CSV">Export for Excel (.csv)</button>
+                    </div>
+                </div>
+                <div id="newAppointmentsTableWrap" class="today-appointments-table-wrap" hidden>
+                    <table class="today-appointments-table new-appointments-table" aria-describedby="newAppointmentsModalTitle">
+                        <thead>
+                            <tr>
+                                <th data-i18n="newAppts.colBooked">Booked at</th>
+                                <th data-i18n="newAppts.colApptTime">Appointment</th>
+                                <th data-i18n="newAppts.colCustomer">Customer</th>
+                                <th data-i18n="newAppts.colService">Service</th>
+                                <th data-i18n="newAppts.colTherapist">Masseuse</th>
+                                <th data-i18n="newAppts.colStatus">Square status</th>
+                                <th data-i18n="newAppts.colBookedBy">Booked by</th>
+                                <th data-i18n="newAppts.colRisk">Prepay / risk</th>
+                            </tr>
+                        </thead>
+                        <tbody id="newAppointmentsTbody"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        <div id="availabilityAuditModal" class="today-appointments-modal availability-audit-modal" style="display: none;" aria-hidden="true">
+            <div class="today-appointments-backdrop" id="availabilityAuditBackdrop"></div>
+            <div class="today-appointments-dialog today-appointments-dialog--audit" role="dialog" aria-modal="true" aria-labelledby="availabilityAuditModalTitle">
+                <div class="today-appointments-header">
+                    <h2 id="availabilityAuditModalTitle" class="today-appointments-title" data-i18n="audit.modalTitle">Square vs rooms audit</h2>
+                    <button type="button" class="today-appointments-close" id="availabilityAuditCloseBtn" data-i18n-title="panel.close" title="Close" aria-label="Close">&times;</button>
+                </div>
+                <p class="availability-audit-intro" data-i18n="audit.intro">Times listed below are offered online in Square but have no matching physical room in this app — block those slots in Square or adjust staffing.</p>
+                <div class="availability-audit-toolbar">
+                    <label class="availability-audit-field"><span data-i18n="audit.dateLabel">Date</span>
+                        <input type="date" id="availabilityAuditDateInput" class="availability-audit-date" />
+                    </label>
+                    <label class="availability-audit-field"><span data-i18n="audit.durationLabel">Duration (min)</span>
+                        <input type="number" id="availabilityAuditDurationInput" class="availability-audit-duration" min="15" max="300" step="15" value="60" />
+                    </label>
+                    <button type="button" id="availabilityAuditRunBtn" class="today-appointments-pin-btn" data-i18n="audit.runBtn">Run audit</button>
+                </div>
+                <p id="availabilityAuditLoading" class="availability-audit-loading" hidden data-i18n="audit.loading">Loading…</p>
+                <p id="availabilityAuditError" class="availability-audit-error" hidden></p>
+                <div id="availabilityAuditBody" class="availability-audit-body" hidden></div>
+            </div>
+        </div>
+        <div id="dayLayoutUnlockModal" class="today-appointments-modal day-layout-unlock-modal" style="display: none;" aria-hidden="true">
+            <div class="today-appointments-backdrop" id="dayLayoutUnlockBackdrop"></div>
+            <div class="today-appointments-dialog day-layout-unlock-dialog" role="dialog" aria-modal="true" aria-labelledby="dayLayoutUnlockTitle">
+                <div class="today-appointments-header">
+                    <h2 id="dayLayoutUnlockTitle" class="today-appointments-title" data-i18n="dayLayout.unlockTitle">Unlock today’s appointments?</h2>
+                    <button type="button" class="today-appointments-close" id="dayLayoutUnlockCloseBtn" data-i18n-title="panel.close" title="Close" aria-label="Close">&times;</button>
+                </div>
+                <div class="day-layout-unlock-body">
+                    <p id="dayLayoutUnlockLoading" class="day-layout-unlock-loading" hidden data-i18n="dayLayout.unlockLoading">Loading…</p>
+                    <p id="dayLayoutUnlockIntro" class="day-layout-unlock-intro" data-i18n="dayLayout.unlockIntro">Are you sure you want to unlock today’s layout pins? You can remove every pin, or only pins from a more recent lock so earlier pins stay.</p>
+                    <p id="dayLayoutUnlockEventsLabel" class="day-layout-unlock-events-label" data-i18n="dayLayout.unlockEventsLabel" hidden>Lock / unlock history for this day</p>
+                    <ul id="dayLayoutUnlockEvents" class="day-layout-unlock-events" hidden aria-live="polite"></ul>
+                    <fieldset class="day-layout-unlock-fieldset" id="dayLayoutUnlockFieldset">
+                        <legend data-i18n="dayLayout.unlockHowLegend">How should rooms unlock?</legend>
+                        <label class="day-layout-unlock-radio">
+                            <input type="radio" name="momDayUnlockScope" value="all" checked />
+                            <span data-i18n="dayLayout.unlockScopeAll">Remove every layout pin for this day</span>
+                        </label>
+                        <label class="day-layout-unlock-radio" id="dayLayoutUnlockPartialLabel">
+                            <input type="radio" name="momDayUnlockScope" value="partial" />
+                            <span data-i18n="dayLayout.unlockScopePartial">Remove only pins promoted at or after a chosen time</span>
+                        </label>
+                        <div class="day-layout-unlock-wave-wrap" id="dayLayoutUnlockWaveWrap" hidden>
+                            <label class="day-layout-unlock-wave-label" for="dayLayoutUnlockWaveSelect"><span data-i18n="dayLayout.unlockWaveSelectLabel">Remove pins promoted at or after</span></label>
+                            <select id="dayLayoutUnlockWaveSelect" class="day-layout-unlock-wave-select"></select>
+                            <p class="day-layout-unlock-hint" data-i18n="dayLayout.unlockWaveHint">Pins from an earlier lock stay pinned. Pick a later time (for example 9:40 AM) to drop only the newest wave, not an earlier one (such as 9:20 AM).</p>
+                        </div>
+                    </fieldset>
+                    <p id="dayLayoutUnlockEmpty" class="day-layout-unlock-empty" hidden data-i18n="dayLayout.unlockEmptyWaves">No layout pins were found for this day. If the calendar still shows locked, try Refresh after closing.</p>
+                    <p id="dayLayoutUnlockError" class="availability-audit-error day-layout-unlock-error" hidden></p>
+                    <div class="day-layout-unlock-actions">
+                        <button type="button" class="today-appointments-pin-btn" id="dayLayoutUnlockCancelBtn" data-i18n="dayLayout.unlockCancel">Cancel</button>
+                        <button type="button" class="today-appointments-export-btn" id="dayLayoutUnlockRefreshBtn" hidden data-i18n="dayLayout.unlockRefresh">Refresh calendar</button>
+                        <button type="button" class="today-appointments-export-btn" id="dayLayoutUnlockConfirmBtn" data-i18n="dayLayout.unlockConfirm">Unlock</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div id="dayLayoutLockModal" class="today-appointments-modal day-layout-lock-modal" style="display: none;" aria-hidden="true">
+            <div class="today-appointments-backdrop" id="dayLayoutLockBackdrop"></div>
+            <div class="today-appointments-dialog day-layout-lock-dialog" role="dialog" aria-modal="true" aria-labelledby="dayLayoutLockTitle">
+                <div class="today-appointments-header">
+                    <h2 id="dayLayoutLockTitle" class="today-appointments-title" data-i18n="dayLayout.lockModalTitle">Lock from a start time</h2>
+                    <button type="button" class="today-appointments-close" id="dayLayoutLockCloseBtn" data-i18n-title="panel.close" title="Close" aria-label="Close">&times;</button>
+                </div>
+                <div class="day-layout-lock-body">
+                    <p class="day-layout-lock-intro" data-i18n="dayLayout.lockModalIntro">Pin only auto-assigned rooms for appointments whose Square start time is on or after the time you pick. Earlier appointments stay auto-assigned (unpinned) unless you lock the full day.</p>
+                    <label class="day-layout-lock-field" for="dayLayoutLockStartInput"><span data-i18n="dayLayout.lockModalFieldLabel">Appointments starting at or after</span></label>
+                    <input type="datetime-local" id="dayLayoutLockStartInput" class="day-layout-lock-datetime" />
+                    <p class="day-layout-lock-hint" data-i18n="dayLayout.lockModalHint">Uses each booking’s scheduled start from Square. You can still use Unlock → partial unlock to drop only newer pin waves.</p>
+                    <p id="dayLayoutLockError" class="availability-audit-error day-layout-lock-error" hidden></p>
+                    <div class="day-layout-lock-actions">
+                        <button type="button" class="today-appointments-pin-btn" id="dayLayoutLockCancelBtn" data-i18n="dayLayout.lockModalCancel">Cancel</button>
+                        <button type="button" class="today-appointments-export-btn" id="dayLayoutLockConfirmBtn" data-i18n="dayLayout.lockModalConfirm">Lock</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div id="staffingAvailPopover" class="staffing-avail-popover" hidden>
+        <div class="staffing-avail-popover-backdrop" id="staffingAvailPopoverBackdrop"></div>
+        <div class="staffing-avail-popover-panel" role="dialog" aria-modal="true" aria-labelledby="staffingAvailPopoverTitle">
+            <h3 id="staffingAvailPopoverTitle" class="staffing-avail-popover-title"></h3>
+            <p id="staffingAvailPopoverHint" class="staffing-avail-popover-hint" hidden></p>
+            <p id="staffingAvailPopoverPastBanner" class="staffing-avail-past-banner" hidden></p>
+            <div id="staffingAvailPopoverMain" class="staffing-avail-popover-main">
+                <div id="staffingAvailPopoverList" class="staffing-avail-popover-list staffing-avail-popover-list--pick"></div>
+                <div id="staffingAvailPopoverPreviewCol" class="staffing-avail-popover-preview-col" hidden>
+                    <div id="staffingAvailPopoverTurnPreview" class="staffing-avail-turn-preview" aria-live="polite">
+                        <div class="staffing-avail-turn-preview-head-row">
+                            <div class="staffing-avail-turn-preview-head" data-i18n="staff.availTurnPreviewTitle">Turn order</div>
+                            <div class="staffing-avail-turn-preview-head staffing-avail-turn-preview-head--counts" data-i18n="staff.availTurnCountsPastTitle">So far</div>
+                            <div class="staffing-avail-turn-preview-head staffing-avail-turn-preview-head--counts staffing-avail-turn-preview-head--booked-stack" data-i18n-aria="staff.availTurnCountsFutureTitle" role="columnheader">
+                                <span class="staffing-avail-turn-preview-head-line" data-i18n="staff.availTurnCountsFutureLine1">Booked</span>
+                                <span class="staffing-avail-turn-preview-head-line staffing-avail-turn-preview-head-line--later" data-i18n="staff.availTurnCountsFutureLine2">Later</span>
+                            </div>
+                            <div class="staffing-avail-turn-preview-head staffing-avail-turn-preview-head--counts staffing-avail-turn-preview-head--next-later" data-i18n="staff.availTurnNextLaterShort" data-i18n-title="staff.availTurnNextLaterTitle">Next</div>
+                            <div hidden class="staffing-avail-turn-preview-head staffing-avail-turn-preview-head--counts" data-i18n="staff.availTurnCountsAnyStaffTitle" data-i18n-title="staff.availTurnCountsAnyStaffTitleHint">Any staff</div>
+                        </div>
+                        <div id="staffingAvailPopoverTurnPreviewBody" class="staffing-avail-turn-preview-body"></div>
+                    </div>
+                </div>
+            </div>
+            <div class="staffing-avail-popover-actions">
+                <button type="button" class="staffing-avail-popover-apply" id="staffingAvailPopoverApply" data-i18n="staff.availApply">Apply</button>
+                <button type="button" class="staffing-avail-popover-cancel" id="staffingAvailPopoverCancel" data-i18n="btn.cancel">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="calendarScreenshotsModal" class="today-appointments-modal calendar-screenshots-modal" style="display: none;" aria-hidden="true">
+        <div class="today-appointments-backdrop" id="calendarScreenshotsBackdrop"></div>
+        <div class="today-appointments-dialog calendar-screenshots-dialog" role="dialog" aria-modal="true" aria-labelledby="calendarScreenshotsModalTitle">
+            <div class="today-appointments-header">
+                <h2 id="calendarScreenshotsModalTitle" class="today-appointments-title" data-i18n="calendarScreenshot.modalTitle">Calendar screenshots</h2>
+                <button type="button" class="today-appointments-close" id="calendarScreenshotsCloseBtn" data-i18n-title="panel.close" title="Close" aria-label="Close">&times;</button>
+            </div>
+            <div class="calendar-screenshots-body">
+                <p class="calendar-screenshots-intro" data-i18n="calendarScreenshot.modalIntro">Each row shows which calendar day the grid captured, and when the screenshot was taken.</p>
+                <p id="calendarScreenshotsLoading" class="calendar-screenshots-loading" hidden data-i18n="calendarScreenshot.loading">Loading…</p>
+                <p id="calendarScreenshotsEmpty" class="calendar-screenshots-empty" hidden data-i18n="calendarScreenshot.empty">No screenshots saved yet. Use “Screenshot day” while the calendar is visible.</p>
+                <div id="calendarScreenshotsList" class="calendar-screenshots-list" role="list"></div>
+            </div>
+        </div>
+        </div>
+
+        <div id="desktopPhoneListFloating" class="desktop-phone-list-floating" style="display: none;" aria-hidden="true">
+            <div class="desktop-phone-list-floating-header" id="desktopPhoneListDragHandle">
+                <span class="desktop-phone-list-floating-title" data-i18n="desktopPhonePeek.panelTitle">Mobile Calendar</span>
+                <div class="desktop-phone-list-floating-header-actions">
+                    <button type="button" class="desktop-phone-list-floating-icon-btn" id="desktopPhoneListMinBtn" data-i18n-title="panel.minimize" title="Minimize">−</button>
+                    <button type="button" class="desktop-phone-list-floating-icon-btn" id="desktopPhoneListCloseBtn" data-i18n-title="panel.close" title="Close">×</button>
+                </div>
+            </div>
+            <div class="desktop-phone-list-floating-toolbar">
+                <div class="phone-calendar-view-toggle desktop-phone-list-floating-toggle" role="group" aria-label="List or checkout">
+                    <button type="button" id="desktopPhoneMirrorListBtn" class="phone-calendar-view-seg" data-i18n="phoneCal.list">Mobile List</button>
+                    <button type="button" id="desktopPhoneMirrorCheckoutBtn" class="phone-calendar-view-seg" data-i18n="phoneCal.checkout">Mobile Checkout</button>
+                </div>
+            </div>
+            <div id="desktopPhoneListMirrorScroll" class="desktop-phone-list-floating-body">
+                <div id="desktopPhoneListMirrorWrap" class="phone-calendar-list-wrap desktop-phone-list-mirror-inner"></div>
+            </div>
+        </div>
+
+    <div id="lanShareModal" class="today-appointments-modal lan-share-modal" style="display: none;" aria-hidden="true">
+        <div class="today-appointments-backdrop" id="lanShareBackdrop"></div>
+        <div class="today-appointments-dialog lan-share-dialog" role="dialog" aria-modal="true" aria-labelledby="lanShareTitle">
+            <div class="today-appointments-header">
+                <h2 id="lanShareTitle" class="today-appointments-title" data-i18n="lanShare.title">Wi‑Fi dashboard link</h2>
+                <button type="button" class="today-appointments-close" id="lanShareCloseBtn" data-i18n-title="panel.close" title="Close" aria-label="Close">&times;</button>
+            </div>
+            <div class="lan-share-body">
+                <p class="lan-share-intro" data-i18n="lanShare.intro">Scan the QR code or copy a link. Use another phone or tablet on the same Wi‑Fi as this computer.</p>
+                <p id="lanShareFeedback" class="lan-share-feedback" hidden></p>
+                <div class="lan-share-qr-wrap">
+                    <img id="lanShareQrImg" class="lan-share-qr-img" width="220" height="220" alt="" decoding="async" />
+                </div>
+                <ul id="lanShareUrlList" class="lan-share-url-list"></ul>
+                <div class="lan-share-actions">
+                    <button type="button" class="lan-share-btn lan-share-btn-primary" id="lanShareCopyBtn" data-i18n="lanShare.copy">Copy link</button>
+                    <button type="button" class="lan-share-btn lan-share-btn-secondary" id="lanShareNativeShareBtn" hidden data-i18n="lanShare.share">Share…</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+    <script src="/static/i18n.js?v=65"></script>
+    <script src="/static/app.js?v=170"></script>
 </body>
 </html>

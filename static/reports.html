@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Daily Report - Spa</title>
+    <link rel="stylesheet" href="/static/style.css?v=11">
+    <style>
+        .report-container { max-width: 1100px; margin: 20px auto; padding: 20px; }
+        .report-controls { margin-bottom: 20px; display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+        .report-controls .range { display: flex; align-items: center; gap: 6px; }
+        .report-table { width: 100%; border-collapse: collapse; margin-top: 15px; }
+        .report-table th, .report-table td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        .report-table th { background: #007bff; color: white; }
+        .report-table tr:nth-child(even) { background: #f9f9f9; }
+        .report-table .total-row { font-weight: bold; background: #e7f3ff; }
+        .report-table .grand-total-row { font-weight: bold; background: #cce5ff; }
+        .report-table .section-row td { background: #e9ecef; font-weight: bold; padding: 10px 8px; }
+        .report-table .service-list { font-size: 12px; }
+        .csv-btn { padding: 8px 16px; background: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer; }
+        .csv-btn:hover { background: #218838; }
+    </style>
+</head>
+<body>
+    <div class="report-container">
+        <h1>Daily Report (Services & Tips)</h1>
+        <p style="color:#666;">Single day or multi-day range. Not for front desk display.</p>
+        <div class="report-controls">
+            <div class="range">
+                <label for="reportStartDate">From:</label>
+                <input type="date" id="reportStartDate" />
+            </div>
+            <div class="range">
+                <label for="reportEndDate">To:</label>
+                <input type="date" id="reportEndDate" />
+            </div>
+            <button onclick="loadReport()">Load Report</button>
+            <div class="range view-toggle">
+                <label>View:</label>
+                <select id="reportView">
+                    <option value="by-date">By date</option>
+                    <option value="by-masseuse" selected>By masseuse</option>
+                </select>
+            </div>
+            <button class="csv-btn" id="csvBtn" onclick="downloadCsv()" style="display:none;">Download CSV</button>
+        </div>
+        <div id="reportContent"></div>
+    </div>
+    <script>
+        let reportData = null;
+        function getTodayLocal() {
+            const d = new Date();
+            return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+        }
+        const today = getTodayLocal();
+        document.getElementById('reportStartDate').value = today;
+        document.getElementById('reportEndDate').value = today;
+        document.getElementById('reportView').addEventListener('change', () => { if (reportData) renderReport(reportData); });
+
+        async function loadReport() {
+            const startDate = document.getElementById('reportStartDate').value;
+            const endDate = document.getElementById('reportEndDate').value;
+            if (!startDate) return;
+            const el = document.getElementById('reportContent');
+            el.innerHTML = 'Loading...';
+            try {
+                let url = '/api/reports/daily-summary?date=' + encodeURIComponent(startDate);
+                if (endDate && endDate >= startDate) {
+                    url += '&end_date=' + encodeURIComponent(endDate);
+                }
+                const res = await fetch(url);
+                if (!res.ok) throw new Error(await res.text());
+                reportData = await res.json();
+                renderReport(reportData);
+                document.getElementById('csvBtn').style.display = 'inline-block';
+            } catch (e) {
+                el.innerHTML = '<p style="color:red;">Error: ' + e.message + '</p>';
+            }
+        }
+
+        // Load today's report automatically on page load
+        loadReport();
+
+        function buildByMasseuse(data) {
+            const byName = {};
+            (data.days || []).forEach(day => {
+                (day.therapists || []).forEach(t => {
+                    if (!byName[t.name]) byName[t.name] = [];
+                    const total = (t.total_pay || 0) + (t.total_tip || 0);
+                    byName[t.name].push({ date: day.date, ...t, rowTotal: total });
+                });
+            });
+            return byName;
+        }
+
+        function renderReport(data) {
+            const el = document.getElementById('reportContent');
+            const view = document.getElementById('reportView').value;
+            if (!data.days || data.days.length === 0) {
+                el.innerHTML = '<p>No data for this range.</p>';
+                return;
+            }
+            if (view === 'by-masseuse') {
+                const byMasseuse = buildByMasseuse(data);
+                const names = Object.keys(byMasseuse).sort();
+                let html = '<table class="report-table"><thead><tr><th>Masseuse</th><th>Date</th><th>Services</th><th>Total Pay</th><th>Total Tip</th><th>Total</th></tr></thead><tbody>';
+                let grandPay = 0, grandTip = 0;
+                names.forEach(name => {
+                    const rows = byMasseuse[name];
+                    let subPay = 0, subTip = 0;
+                    rows.forEach(r => {
+                        subPay += r.total_pay || 0;
+                        subTip += r.total_tip || 0;
+                        grandPay += r.total_pay || 0;
+                        grandTip += r.total_tip || 0;
+                        const servicesStr = (r.services || []).map(s => `${s.service} (${s.duration_min}m) $${s.pay}`).join(', ') || '-';
+                        html += `<tr><td>${name}</td><td>${r.date}</td><td class="service-list">${r.service_count} — ${servicesStr}</td><td>$${r.total_pay}</td><td>$${r.total_tip}</td><td>$${r.rowTotal.toFixed(2)}</td></tr>`;
+                    });
+                    const subTotal = subPay + subTip;
+                    html += `<tr class="total-row"><td><strong>${name}</strong> — subtotal (report period)</td><td></td><td></td><td>$${subPay.toFixed(2)}</td><td>$${subTip.toFixed(2)}</td><td>$${subTotal.toFixed(2)}</td></tr>`;
+                });
+                if (names.length > 1) {
+                    html += `<tr class="grand-total-row"><td colspan="2">Grand total</td><td></td><td>$${grandPay.toFixed(2)}</td><td>$${grandTip.toFixed(2)}</td><td>$${(grandPay + grandTip).toFixed(2)}</td></tr>`;
+                }
+                html += '</tbody></table>';
+                el.innerHTML = html;
+                return;
+            }
+            let html = '<table class="report-table"><thead><tr><th>Date</th><th>Therapist</th><th>Services</th><th>Total Pay</th><th>Total Tip</th><th>Total</th></tr></thead><tbody>';
+            let grandPay = 0, grandTip = 0;
+            const masseuseTotals = {};
+            data.days.forEach(day => {
+                (day.therapists || []).forEach(t => {
+                    const total = (t.total_pay || 0) + (t.total_tip || 0);
+                    grandPay += t.total_pay || 0;
+                    grandTip += t.total_tip || 0;
+                    if (!masseuseTotals[t.name]) masseuseTotals[t.name] = { pay: 0, tip: 0 };
+                    masseuseTotals[t.name].pay += t.total_pay || 0;
+                    masseuseTotals[t.name].tip += t.total_tip || 0;
+                    const servicesStr = (t.services || []).map(s => `${s.service} (${s.duration_min}m) $${s.pay}`).join(', ') || '-';
+                    html += `<tr><td>${day.date}</td><td>${t.name}</td><td class="service-list">${t.service_count} — ${servicesStr}</td><td>$${t.total_pay}</td><td>$${t.total_tip}</td><td>$${total.toFixed(2)}</td></tr>`;
+                });
+                if ((day.therapists || []).length > 0) {
+                    const dayTotal = (day.day_total_pay || 0) + (day.day_total_tip || 0);
+                    html += `<tr class="total-row"><td>${day.date}</td><td colspan="2">Day total</td><td>$${day.day_total_pay}</td><td>$${day.day_total_tip}</td><td>$${dayTotal.toFixed(2)}</td></tr>`;
+                }
+            });
+            const masseuseNames = Object.keys(masseuseTotals).sort();
+            if (masseuseNames.length > 0) {
+                html += '<tr class="section-row"><td colspan="6"><strong>Subtotals by masseuse (report period)</strong></td></tr>';
+                masseuseNames.forEach(name => {
+                    const m = masseuseTotals[name];
+                    const mTotal = m.pay + m.tip;
+                    html += `<tr class="total-row"><td></td><td>${name}</td><td></td><td>$${m.pay.toFixed(2)}</td><td>$${m.tip.toFixed(2)}</td><td>$${mTotal.toFixed(2)}</td></tr>`;
+                });
+            }
+            if (data.days.length > 1) {
+                const grandTotal = grandPay + grandTip;
+                html += `<tr class="grand-total-row"><td colspan="2">Grand total</td><td></td><td>$${grandPay.toFixed(2)}</td><td>$${grandTip.toFixed(2)}</td><td>$${grandTotal.toFixed(2)}</td></tr>`;
+            }
+            html += '</tbody></table>';
+            el.innerHTML = html;
+        }
+
+        function downloadCsv() {
+            if (!reportData || !reportData.days) return;
+            const view = document.getElementById('reportView').value;
+            const start = reportData.start_date || '';
+            const end = reportData.end_date || start;
+            let rows, filename;
+            if (view === 'by-masseuse') {
+                const byMasseuse = buildByMasseuse(reportData);
+                const names = Object.keys(byMasseuse).sort();
+                rows = [['Masseuse', 'Date', 'Service Count', 'Services', 'Total Pay', 'Total Tip', 'Total']];
+                let grandPay = 0, grandTip = 0;
+                names.forEach(name => {
+                    byMasseuse[name].forEach(r => {
+                        const total = (r.total_pay || 0) + (r.total_tip || 0);
+                        grandPay += r.total_pay || 0;
+                        grandTip += r.total_tip || 0;
+                        const servicesStr = (r.services || []).map(s => `${s.service} ${s.duration_min}m $${s.pay}`).join('; ');
+                        rows.push([name, r.date, r.service_count, servicesStr, r.total_pay, r.total_tip, total.toFixed(2)]);
+                    });
+                    const subPay = byMasseuse[name].reduce((s, r) => s + (r.total_pay || 0), 0);
+                    const subTip = byMasseuse[name].reduce((s, r) => s + (r.total_tip || 0), 0);
+                    rows.push([name + ' — subtotal (report period)', '', '', '', subPay.toFixed(2), subTip.toFixed(2), (subPay + subTip).toFixed(2)]);
+                });
+                if (names.length > 1) {
+                    rows.push([], ['Grand total', '', '', '', grandPay.toFixed(2), grandTip.toFixed(2), (grandPay + grandTip).toFixed(2)]);
+                }
+                filename = 'report-by-masseuse-' + start + (end !== start ? '-' + end : '') + '.csv';
+            } else {
+                rows = [['Date', 'Therapist', 'Service Count', 'Services', 'Total Pay', 'Total Tip', 'Total']];
+                let grandPay = 0, grandTip = 0;
+                const masseuseTotals = {};
+                reportData.days.forEach(day => {
+                    (day.therapists || []).forEach(t => {
+                        const total = (t.total_pay || 0) + (t.total_tip || 0);
+                        grandPay += t.total_pay || 0;
+                        grandTip += t.total_tip || 0;
+                        if (!masseuseTotals[t.name]) masseuseTotals[t.name] = { pay: 0, tip: 0 };
+                        masseuseTotals[t.name].pay += t.total_pay || 0;
+                        masseuseTotals[t.name].tip += t.total_tip || 0;
+                        const servicesStr = (t.services || []).map(s => `${s.service} ${s.duration_min}m $${s.pay}`).join('; ');
+                        rows.push([day.date, t.name, t.service_count, servicesStr, t.total_pay, t.total_tip, total.toFixed(2)]);
+                    });
+                });
+                const masseuseNames = Object.keys(masseuseTotals).sort();
+                if (masseuseNames.length > 0) {
+                    rows.push([]);
+                    rows.push(['Subtotals by masseuse (report period)', '', '', '', '', '', '']);
+                    masseuseNames.forEach(name => {
+                        const m = masseuseTotals[name];
+                        rows.push([name, '', '', '', m.pay.toFixed(2), m.tip.toFixed(2), (m.pay + m.tip).toFixed(2)]);
+                    });
+                }
+                if (reportData.days.length > 1) {
+                    rows.push([], ['Grand total', '', '', '', grandPay.toFixed(2), grandTip.toFixed(2), (grandPay + grandTip).toFixed(2)]);
+                }
+                filename = 'report-' + start + (end !== start ? '-' + end : '') + '.csv';
+            }
+            const csv = rows.map(r => Array.isArray(r) ? r.map(c => '"' + String(c).replace(/"/g, '""') + '"').join(',') : '').join('\n');
+            const blob = new Blob([csv], { type: 'text/csv' });
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = filename;
+            a.click();
+            URL.revokeObjectURL(a.href);
+        }
+    </script>
+</body>
+</html>

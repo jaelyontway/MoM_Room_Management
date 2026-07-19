@@ -186,9 +186,9 @@ def test_case_2():
     print(f"Single rooms assigned: {sorted(single_rooms)}")
     
     # Expected: couples should get 5, 6
-    # Expected: singles should get 1, 3, 4, 0, 2
+    # Four massage singles + Aromatherapy (room-neutral add-on) → ADDON
     assert set(couple_rooms) == {'5', '6'}, f"Expected couples in {{'5', '6'}}, got {set(couple_rooms)}"
-    assert set(single_rooms) == {'1', '3', '4', '0', '2'}, f"Expected singles in {{'1', '3', '4', '0', '2'}}, got {set(single_rooms)}"
+    assert set(single_rooms) == {'1', '2', '3', '4', 'ADDON'}, f"Unexpected single rooms: {set(single_rooms)}"
     print("[PASS] Test Case 2 PASSED")
 
 
@@ -275,8 +275,8 @@ def test_case_3():
     
     print(f"Single rooms assigned: {sorted(single_rooms)}")
     
-    # Expected: singles should get 1, 3, 4, 2, 0, 6, 5 (in priority order)
-    assert set(single_rooms) == {'1', '3', '4', '2', '0', '6', '5'}, f"Expected singles in {{'1', '3', '4', '2', '0', '6', '5'}}, got {set(single_rooms)}"
+    # Six massage singles + Aromatherapy → ADDON; Rm 5 unused when 0–4,6 suffice
+    assert set(single_rooms) == {'0', '1', '2', '3', '4', '6', 'ADDON'}, f"Unexpected single rooms: {set(single_rooms)}"
     assert len(single_rooms) == 7, f"Expected 7 singles, got {len(single_rooms)}"
     print("[PASS] Test Case 3 PASSED")
 
@@ -355,7 +355,7 @@ def test_02d_blocks_both_rooms():
     # Singles should NOT get 0 or 2 when 02D is used
     assert '0' not in single_rooms, "Room 0 should be blocked when 02D is used"
     assert '2' not in single_rooms, "Room 2 should be blocked when 02D is used"
-    
+
     print("[PASS] Test: 02D blocks both rooms PASSED")
 
 

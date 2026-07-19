@@ -1,0 +1,75 @@
+/* Check-in kiosk – full screen, large text */
+* { box-sizing: border-box; }
+body { margin: 0; padding: 0; overflow: hidden; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #1a1a2e; color: #eee; }
+.kiosk { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 2rem; }
+
+.camera-wrap { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; overflow: hidden; }
+.camera-wrap video, .camera-wrap canvas { width: 1px; height: 1px; }
+
+.screen { text-align: center; max-width: 560px; }
+.screen .message { font-size: clamp(1.5rem, 4vw, 2.5rem); font-weight: 600; margin: 0 0 0.5rem; line-height: 1.3; }
+.screen .submsg { font-size: clamp(1rem, 2.5vw, 1.25rem); color: #bbb; margin: 0.5rem 0 1rem; }
+.screen .voice-hint { font-size: 1rem; color: #8ab; margin: 0.25rem 0 0.5rem; }
+
+/* Animated face */
+.face { width: clamp(80px, 20vw, 140px); height: clamp(80px, 20vw, 140px); margin: 0.5rem auto 1rem; }
+.face-svg { width: 100%; height: 100%; }
+.face-head { transition: transform 0.15s ease; }
+.face-mouth { transform-origin: 60px 78px; }
+
+@keyframes mouth-scale {
+    0%, 100% { transform: scaleY(0.9); }
+    50%     { transform: scaleY(1.12); }
+}
+
+/* Idle: gentle smile, no animation */
+.face-idle .face-mouth { transition: d 0.2s ease; }
+
+/* Talking: mouth opens and closes */
+.face-talking .face-mouth { animation: mouth-scale 0.5s ease-in-out infinite; }
+.face-talking .face-head { animation: head-talk 0.5s ease-in-out infinite; }
+
+@keyframes head-talk {
+    0%, 100% { transform: scale(1); }
+    50%      { transform: scale(1.03); }
+}
+
+/* Listening: face pulses gently */
+.face-listening .face-head { animation: head-listen 1.2s ease-in-out infinite; }
+.face-listening .face-mouth { animation: mouth-listen 1.2s ease-in-out infinite; }
+
+@keyframes head-listen {
+    0%, 100% { transform: scale(1); opacity: 1; }
+    50%      { transform: scale(1.05); opacity: 0.95; }
+}
+@keyframes mouth-listen {
+    0%, 100% { opacity: 0.8; }
+    50%      { opacity: 1; }
+}
+
+.screen-idle .message { color: #aaccff; }
+.screen-checkin .message { color: #fff; }
+.screen-welcome .message { color: #90EE90; }
+.screen-error .message { color: #ffb3b3; }
+
+.checkin-form { margin-top: 1rem; display: flex; flex-direction: column; align-items: center; gap: 0.75rem; }
+.checkin-form label { font-size: 0.95rem; display: block; margin-bottom: 0.2rem; text-align: left; width: 100%; max-width: 320px; color: #aaa; }
+.checkin-form input, .checkin-form select { width: 100%; max-width: 320px; padding: 0.6rem 1rem; font-size: 1.1rem; border: 2px solid #555; border-radius: 8px; background: #2d2d44; color: #fff; }
+.checkin-form input::placeholder { color: #888; }
+.checkin-form input:focus, .checkin-form select:focus { outline: none; border-color: #5a9; }
+.btn-checkin { margin-top: 0.25rem; padding: 0.75rem 1.75rem; font-size: 1.1rem; font-weight: 600; color: #1a1a2e; background: #90EE90; border: none; border-radius: 8px; cursor: pointer; }
+.btn-checkin:hover { background: #7acc7a; }
+.btn-start-checkin {
+    margin-top: 0.75rem;
+    padding: 0.7rem 1.8rem;
+    font-size: 1.05rem;
+    font-weight: 600;
+    color: #1a1a2e;
+    background: #aaccff;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+}
+.btn-start-checkin:hover { background: #88aadd; }
+.btn-next { padding: 0.6rem 1.5rem; font-size: 1rem; color: #1a1a2e; background: #aaccff; border: none; border-radius: 8px; cursor: pointer; margin-top: 1rem; }
+.btn-next:hover { background: #88aadd; }

@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Voice Booking Test – Spa</title>
+    <link rel="stylesheet" href="/static/checkin.css" />
+</head>
+<body>
+    <div id="kiosk" class="kiosk">
+        <div id="voiceScreen" class="screen screen-checkin">
+            <p class="message" id="voiceMessage">Would you like to schedule an appointment?</p>
+            <div id="faceVoice" class="face face-smiley" aria-hidden="true">
+                <svg class="face-svg" viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg">
+                    <circle class="face-head" cx="60" cy="60" r="55" fill="#ffdbac" stroke="#e0b080"/>
+                    <circle class="face-eye" cx="42" cy="52" r="6" fill="#333"/>
+                    <circle class="face-eye" cx="78" cy="52" r="6" fill="#333"/>
+                    <path class="face-mouth face-mouth-talk" d="M 40 72 Q 60 90 80 72" fill="none" stroke="#333" stroke-width="3" stroke-linecap="round"/>
+                </svg>
+            </div>
+            <p class="voice-hint" id="voiceHint">This is a test only. I will create a colored test box on today's calendar.</p>
+            <button type="button" id="btnStartVoice" class="btn-start-checkin">Tap to start voice test</button>
+            <p class="submsg" id="voiceStatus"></p>
+        </div>
+    </div>
+
+    <script>
+    (function () {
+        const startBtn = document.getElementById('btnStartVoice');
+        const msgEl = document.getElementById('voiceMessage');
+        const hintEl = document.getElementById('voiceHint');
+        const statusEl = document.getElementById('voiceStatus');
+        const faceEl = document.getElementById('faceVoice');
+
+        const VOICE_TEST_KEY = 'voice_test_events_v1';
+
+        function setFaceMode(mode) {
+            faceEl.classList.remove('face-talking', 'face-listening');
+            if (mode === 'talk') faceEl.classList.add('face-talking');
+            if (mode === 'listen') faceEl.classList.add('face-listening');
+        }
+
+        function addTestAppointment(serviceText) {
+            const now = new Date();
+            const start = new Date(now.getFullYear(), now.getMonth(), now.getDate(), now.getHours(), 0, 0, 0);
+            const end = new Date(start.getTime() + 60 * 60 * 1000);
+            const dateStr = start.toISOString().slice(0, 10);
+            const id = 'voice-' + Date.now();
+            const ev = {
+                id,
+                date: dateStr,
+                start_at: start.toISOString(),
+                end_at: end.toISOString(),
+                service: serviceText || 'Voice test appointment',
+                customer: 'Voice booking test',
+                therapist: '(voice test)',
+            };
+            try {
+                const raw = localStorage.getItem(VOICE_TEST_KEY);
+                const all = raw ? JSON.parse(raw) : [];
+                all.push(ev);
+                localStorage.setItem(VOICE_TEST_KEY, JSON.stringify(all));
+            } catch (e) {
+                console.error('Error saving voice test event', e);
+            }
+        }
+
+        function getRecognizer() {
+            const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+            if (!SR) return null;
+            const r = new SR();
+            r.lang = 'en-US';
+            r.interimResults = false;
+            r.maxAlternatives = 1;
+            return r;
+        }
+
+        async function runVoiceFlow() {
+            const rec = getRecognizer();
+            if (!rec) {
+                statusEl.textContent = 'Speech recognition not supported in this browser. Try Chrome on desktop.';
+                return;
+            }
+
+            // Step 1: ask yes/no
+            msgEl.textContent = 'Would you like to schedule an appointment? Say “yes” or “no”.';
+            hintEl.textContent = 'Listening…';
+            setFaceMode('listen');
+
+            const askYesNo = () => new Promise((resolve) => {
+                rec.onresult = (e) => {
+                    const text = (e.results[0][0].transcript || '').toLowerCase();
+                    resolve(text);
+                };
+                rec.onerror = () => resolve('');
+                rec.onend = () => {};
+                rec.start();
+            });
+
+            const answer = await askYesNo();
+            if (!answer.includes('yes')) {
+                setFaceMode('');
+                msgEl.textContent = "Okay, I won't schedule anything. This was just a test.";
+                hintEl.textContent = '';
+                statusEl.textContent = '';
+                return;
+            }
+
+            // Step 2: ask what to schedule
+            msgEl.textContent = 'What would you like to schedule?';
+            hintEl.textContent = 'For example: “90 minute couples massage”.';
+            setFaceMode('listen');
+
+            const askService = () => new Promise((resolve) => {
+                rec.onresult = (e) => {
+                    const text = (e.results[0][0].transcript || '').trim();
+                    resolve(text);
+                };
+                rec.onerror = () => resolve('');
+                rec.onend = () => {};
+                rec.start();
+            });
+
+            const serviceText = await askService();
+            setFaceMode('');
+
+            if (!serviceText) {
+                msgEl.textContent = 'I did not catch that. Please try again.';
+                hintEl.textContent = '';
+                statusEl.textContent = '';
+                return;
+            }
+
+            // Save local test appointment and confirm
+            addTestAppointment(serviceText);
+            msgEl.textContent = 'I heard:';
+            hintEl.textContent = '“' + serviceText + '”';
+            statusEl.textContent = 'A test appointment was added on today\'s calendar in a special color. This does NOT book in Square.';
+        }
+
+        if (startBtn) {
+            startBtn.addEventListener('click', () => {
+                runVoiceFlow().catch(err => {
+                    console.error(err);
+                    statusEl.textContent = 'There was an error running the voice test.';
+                });
+            });
+        }
+    })();
+    </script>
+</body>
+</html>
+

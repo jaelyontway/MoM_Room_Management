@@ -10,12 +10,12 @@ class MockSquareService:
     # Allowed therapists (case-insensitive matching)
     ALLOWED_THERAPISTS = [
         "cassey t", "hanna I", "hongxia shaw", "jenny l",
-        "katy m", "may l", "rose j", "sophia e", "tina r", "vicky w", "amy rz"
+        "katy m", "may l", "rose j", "sophia e", "tina r", "vicky w", "lillian i"
     ]
     
     # Mock therapists (for mock data generation)
     THERAPISTS = ["Katy M", "May L", "Jenny L", "Cassey T", 
-                  "Hanna I", "Hongxia Shaw", "Rose J", "Sophia E", "Tina R", "Vicky W", "Amy RZ"]
+                  "Hanna I", "Hongxia Shaw", "Rose J", "Sophia E", "Tina R", "Vicky W", "Lillian I"]
     
     # Mock services
     SERVICES = [
@@ -45,7 +45,7 @@ class MockSquareService:
             List of booking dicts in Square-like format
         """
         date_obj = datetime.strptime(date, '%Y-%m-%d')
-        
+
         # Generate mock bookings
         bookings = []
         
@@ -80,16 +80,31 @@ class MockSquareService:
                 'service': service,
                 'customer': customer,
                 'type': 'couple' if is_couple else 'single',
-                'status': 'ACCEPTED'
+                'status': 'ACCEPTED',
+                'booked_by': random.choice(['customer', 'us']),
             }
-            
+
             bookings.append(booking)
         
         # Sort by start time
         bookings.sort(key=lambda b: b['start_at'])
         
         return bookings
-    
+
+    def get_bookings_by_local_date_range(self, start_date: str, end_date: str) -> Dict[str, List[Dict]]:
+        """Same shape as SquareService.get_bookings_by_local_date_range (one dict per local day)."""
+        d0 = datetime.strptime(start_date, "%Y-%m-%d").date()
+        d1 = datetime.strptime(end_date, "%Y-%m-%d").date()
+        if d1 < d0:
+            return {}
+        out: Dict[str, List[Dict]] = {}
+        cur = d0
+        while cur <= d1:
+            ds = cur.strftime("%Y-%m-%d")
+            out[ds] = self.get_bookings_for_date(ds)
+            cur += timedelta(days=1)
+        return out
+
     def get_therapists(self) -> List[str]:
         """Get list of all therapists."""
         return self.ALLOWED_THERAPISTS.copy()
@@ -136,7 +151,7 @@ class MockSquareService:
                 'id': f"test_s1_{date.replace('-', '')}",
                 'start_at': (base_time + timedelta(hours=0)).isoformat(),
                 'end_at': (base_time + timedelta(hours=1)).isoformat(),
-                'therapist': 'Amy RZ',
+                'therapist': 'Lillian I',
                 'service': 'Swedish Massage',
                 'customer': 'Single1',
                 'type': 'single',
@@ -207,7 +222,7 @@ class MockSquareService:
                 'id': f"test_s2_{date.replace('-', '')}",
                 'start_at': (base_time + timedelta(hours=0)).isoformat(),
                 'end_at': (base_time + timedelta(hours=1)).isoformat(),
-                'therapist': 'Amy RZ',
+                'therapist': 'Lillian I',
                 'service': 'Deep Tissue',
                 'customer': 'Single2',
                 'type': 'single',
@@ -287,7 +302,7 @@ class MockSquareService:
                 'id': f"test_s4_{date.replace('-', '')}",
                 'start_at': (base_time + timedelta(hours=0)).isoformat(),
                 'end_at': (base_time + timedelta(hours=1)).isoformat(),
-                'therapist': 'Amy RZ',
+                'therapist': 'Lillian I',
                 'service': 'Aromatherapy',
                 'customer': 'Single4',
                 'type': 'single',
@@ -325,4 +340,35 @@ class MockSquareService:
             },
         ]
         return bookings
+
+    def list_newest_booked_appointments_report(self, limit: int) -> List[Dict]:
+        """Sample rows for /api/recent-booked-appointments when Square is not configured."""
+        limit = max(1, min(int(limit or 10), 30))
+        now = datetime.now()
+        risk_cid = 'MOCK_CUST_RISK_01'
+        rows: List[Dict] = []
+        for i in range(min(limit, 18)):
+            created = now - timedelta(hours=i * 2 + 1)
+            slot_start = now.replace(hour=10, minute=0, second=0, microsecond=0) + timedelta(days=(i % 9) + 1, minutes=(i % 5) * 30)
+            slot_end = slot_start + timedelta(minutes=60 if i % 2 == 0 else 90)
+            cid = risk_cid if i % 7 == 0 else f'MOCK_CUST_{(i % 6) + 1:02d}'
+            cust = 'Alex (risk demo)' if i % 7 == 0 else random.choice(self.CUSTOMERS)
+            rows.append(
+                {
+                    'booking_id': f'mock_new_{i:03d}',
+                    'customer': cust,
+                    'customer_id': cid,
+                    'created_at': created.isoformat(),
+                    'start_at': slot_start.isoformat(),
+                    'end_at': slot_end.isoformat(),
+                    'service': random.choice(self.SERVICES),
+                    'therapist': random.choice(self.THERAPISTS),
+                    'square_status': 'NO_SHOW' if i == 3 else 'ACCEPTED',
+                    'booked_by': 'customer' if i % 2 == 0 else 'us',
+                    'had_square_no_show': i % 7 == 0,
+                    'online_only_note': 'Online-only / prepay (Square profile)' if i % 11 == 0 else None,
+                }
+            )
+        rows.sort(key=lambda r: r.get('created_at') or '', reverse=True)
+        return rows[:limit]
 

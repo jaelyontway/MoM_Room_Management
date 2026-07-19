@@ -1,0 +1,602 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>English ↔ 中文 — Spa & dashboard terms</title>
+    <style>
+        * { box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; margin: 0; background: #f4f6f8; color: #1a1a1a; line-height: 1.45; }
+        .wrap { max-width: 1100px; margin: 0 auto; padding: 16px 18px 48px; }
+        h1 { font-size: 1.35rem; margin: 0 0 8px; }
+        .sub { color: #555; font-size: 0.92rem; margin: 0 0 14px; max-width: 52rem; }
+        .staff-note { background: #fff; border: 1px solid #cfe2ff; border-radius: 8px; padding: 10px 14px; margin-bottom: 18px; font-size: 0.9rem; color: #36454f; }
+        .back { margin-bottom: 14px; }
+        .back a { color: #0d6efd; text-decoration: none; font-size: 14px; }
+        .back a:hover { text-decoration: underline; }
+        .glossary-sticky-tools {
+            position: sticky;
+            top: 0;
+            z-index: 200;
+            margin: 0 0 14px;
+            padding: 10px 0 12px;
+            background: #f4f6f8;
+            box-shadow: 0 6px 12px -8px rgba(0, 0, 0, 0.15);
+        }
+        .glossary-sticky-tools .filter-row { margin-bottom: 12px; }
+        .glossary-sticky-tools .speech-rate-row { margin-bottom: 0; }
+        .glossary-sticky-tools .toc {
+            margin-bottom: 0;
+            padding-top: 4px;
+            border-top: 1px solid #dee2e6;
+        }
+        :root { --glossary-sticky-top: 120px; }
+        table.glossary-table thead th {
+            position: sticky;
+            top: var(--glossary-sticky-top);
+            z-index: 50;
+            box-shadow: 0 1px 0 #dee2e6;
+        }
+        .filter-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 18px; }
+        .filter-row label { font-size: 13px; font-weight: 600; color: #444; }
+        .filter-row input {
+            flex: 1; min-width: 200px; max-width: 420px; padding: 8px 12px; border: 1px solid #ced4da; border-radius: 6px; font-size: 14px;
+        }
+        .toc { display: flex; flex-wrap: wrap; gap: 8px 14px; margin-bottom: 22px; font-size: 13px; align-items: center; }
+        .toc a { color: #0d47a1; }
+        .toc .toc-sep { color: #adb5bd; font-size: 12px; }
+        section { margin-bottom: 28px; scroll-margin-top: 12px; }
+        section h2 { font-size: 1.05rem; margin: 0 0 10px; color: #0d47a1; border-bottom: 1px solid #dee2e6; padding-bottom: 6px; }
+        section p.hint { font-size: 12px; color: #666; margin: -4px 0 10px; }
+        /* no overflow:hidden on table — it breaks sticky thead; shadow on wrapper would clip anyway */
+        table.glossary-table { width: 100%; border-collapse: collapse; background: #fff; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,.08); font-size: 13px; }
+        table.glossary-table th, table.glossary-table td { border: 1px solid #e9ecef; padding: 7px 10px; text-align: left; vertical-align: top; }
+        table.glossary-table th { background: #e7f1ff; color: #0d47a1; font-weight: 600; }
+        table.glossary-table tr:nth-child(even) { background: #fafbfc; }
+        table.glossary-table code { font-size: 11px; background: #f1f3f5; padding: 1px 5px; border-radius: 3px; color: #495057; }
+        table.glossary-table .zh { font-family: 'PingFang SC', 'Microsoft YaHei', 'SimHei', sans-serif; }
+        table.glossary-table td.col-en {
+            display: flex; flex-wrap: wrap; align-items: flex-start; gap: 6px 8px; vertical-align: top;
+        }
+        table.glossary-table .col-en-phrase { flex: 1; min-width: 120px; }
+        table.glossary-table td.col-zh {
+            display: flex; flex-wrap: wrap; align-items: flex-start; gap: 6px 8px; vertical-align: top;
+        }
+        table.glossary-table .col-zh-phrase { flex: 1; min-width: 3.5em; }
+        button.glossary-speak,
+        button.glossary-speak-zh {
+            flex: 0 0 auto; align-self: center;
+            width: 30px; height: 28px; padding: 0; margin: 0;
+            font-size: 12px; line-height: 1; border: 1px solid #ced4da; border-radius: 6px;
+            background: #fff; color: #0d47a1; cursor: pointer;
+            box-shadow: 0 1px 2px rgba(0,0,0,.06);
+        }
+        button.glossary-speak:hover,
+        button.glossary-speak-zh:hover { background: #e7f1ff; border-color: #86b7fe; }
+        button.glossary-speak:focus,
+        button.glossary-speak-zh:focus { outline: 2px solid #0d6efd; outline-offset: 1px; }
+        .phonetic {
+            font-size: 11px;
+            color: #5c6570;
+            font-style: italic;
+            font-family: 'Lucida Sans Unicode', 'Segoe UI', 'Arial Unicode MS', 'Noto Sans', sans-serif;
+            white-space: normal;
+            word-break: break-word;
+        }
+        .phonetics-hint { font-size: 12px; color: #495057; margin: -8px 0 14px; max-width: 52rem; }
+        .speech-rate-row {
+            display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px;
+            margin-bottom: 16px; padding: 10px 12px; background: #fff; border: 1px solid #dee2e6;
+            border-radius: 8px; max-width: 36rem; box-shadow: 0 1px 2px rgba(0,0,0,.04);
+        }
+        .speech-rate-row > label { font-size: 13px; font-weight: 600; color: #444; flex: 1 1 100%; }
+        .speech-rate-controls {
+            display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; width: 100%;
+        }
+        .speech-rate-controls input[type="range"] { flex: 1; min-width: 140px; max-width: 280px; vertical-align: middle; }
+        .speech-rate-cap { font-size: 11px; color: #6c757d; white-space: nowrap; }
+        #glossarySpeechRateVal { font-size: 13px; font-weight: 600; color: #0d47a1; min-width: 3.2em; font-variant-numeric: tabular-nums; }
+        .phonetics-status { font-size: 12px; color: #856404; margin: -4px 0 12px; }
+        .err { color: #842029; padding: 12px; background: #f8d7da; border-radius: 6px; }
+        .glossary-tech { margin-top: 32px; padding-top: 8px; border-top: 2px dashed #ced4da; }
+        .glossary-tech-toggle {
+            display: inline-flex; align-items: center; gap: 8px;
+            padding: 10px 18px; font-size: 14px; font-weight: 600; cursor: pointer;
+            color: #fff; background: #495057; border: none; border-radius: 8px;
+            box-shadow: 0 1px 3px rgba(0,0,0,.12);
+        }
+        .glossary-tech-toggle:hover { background: #343a40; }
+        .glossary-tech-toggle:focus { outline: 2px solid #0d6efd; outline-offset: 2px; }
+        .glossary-tech-toggle[aria-expanded="true"] { background: #6c757d; }
+        .glossary-tech-panel { margin-top: 16px; }
+        .glossary-tech-panel[hidden] { display: none !important; }
+        .glossary-tech-intro { font-size: 12px; color: #666; margin: 0 0 14px; max-width: 48rem; }
+    </style>
+</head>
+<body>
+    <div class="wrap">
+        <div class="back"><a href="/static/index.html">← Dashboard</a></div>
+        <h1>English ↔ 中文 glossary</h1>
+        <p class="sub">
+            <strong>For the floor:</strong> start with spa wording, body focus labels, and pressure terms (no booking-system jargon).
+            <strong>For building the app:</strong> expand the section at the bottom for internal i18n keys, Square-related copy, API labels, and calendar logic strings.
+        </p>
+        <p class="staff-note">
+            Therapists and desk staff only need the <strong>first three sections</strong> (menu phrases, focus areas, pressure). You do not need Square, API, or programmer field names for daily work.
+        </p>
+        <p class="phonetics-hint">
+            <strong>Pinyin</strong> (tone marks) is next to 中文 so English speakers can read Chinese aloud.
+            <strong>American English pronunciation</strong> is in the next column, written in <strong>IPA</strong> (International Phonetic Alphabet, US accent)—the same kind of symbols dictionaries use for “how to say it in American English.”
+            Pinyin loads from a CDN (needs internet). US IPA comes from a word list on this server; words not in the list show a dot (·) until we add them.
+            Each English cell has a <strong>▶</strong> for <strong>US English</strong> speech; each 中文 cell has <strong>▶</strong> for <strong>Mandarin (zh-CN)</strong>. Both use your browser’s voices (install Chinese language packs on Windows if 中文 has no sound).
+            Use <strong>Speech speed</strong> below to slow down or speed up playback.
+        </p>
+        <p class="phonetics-status" id="phoneticsStatus" hidden></p>
+        <div id="glossaryStickyTools" class="glossary-sticky-tools">
+            <div class="filter-row">
+                <label for="glossaryFilter">Filter visible tables</label>
+                <input type="search" id="glossaryFilter" placeholder="English, 中文, or (in developer section) key…" autocomplete="off" />
+            </div>
+            <div class="speech-rate-row" id="glossarySpeechRateWrap">
+                <label for="glossarySpeechRate">Speech speed (▶ listen buttons)</label>
+                <div class="speech-rate-controls">
+                    <span class="speech-rate-cap">Slower</span>
+                    <input type="range" id="glossarySpeechRate" min="0.45" max="1.05" step="0.05" value="0.85" aria-describedby="glossarySpeechRateHint" />
+                    <span class="speech-rate-cap">Faster</span>
+                    <span id="glossarySpeechRateVal">0.85×</span>
+                </div>
+                <span id="glossarySpeechRateHint" class="speech-rate-cap" style="flex:1 1 100%;margin-top:-4px">1.0× is normal; lower is slower. Your choice is saved in this browser.</span>
+            </div>
+            <nav class="toc" id="glossaryToc" aria-label="On this page"></nav>
+        </div>
+        <div id="glossaryMount"></div>
+    </div>
+    <script src="/static/i18n.js"></script>
+    <script>
+        (function () {
+            function esc(s) {
+                if (s == null) return '';
+                return String(s)
+                    .replace(/&/g, '&amp;')
+                    .replace(/</g, '&lt;')
+                    .replace(/>/g, '&gt;')
+                    .replace(/"/g, '&quot;');
+            }
+
+            function tdEnglishWithSpeak(escapedEn) {
+                return (
+                    '<td class="col-en">' +
+                    '<span class="col-en-phrase">' + escapedEn + '</span>' +
+                    '<button type="button" class="glossary-speak" aria-label="Listen: US English" title="Play US English (browser voice)">▶</button>' +
+                    '</td>'
+                );
+            }
+
+            function tdChineseWithSpeak(escapedZh) {
+                return (
+                    '<td class="zh col-zh">' +
+                    '<span class="col-zh-phrase">' + escapedZh + '</span>' +
+                    '<button type="button" class="glossary-speak-zh" aria-label="Listen: Mandarin Chinese" title="Play 中文 / Mandarin (browser voice)">▶</button>' +
+                    '</td>'
+                );
+            }
+
+            const PREFIX_LABELS = {
+                alert: 'Alerts',
+                api: 'API status',
+                bookedBy: 'Booked-by labels',
+                btn: 'Buttons',
+                calendar: 'Calendar & capacity',
+                checkin: 'Check-in',
+                checkout: 'Check-out',
+                cupping: 'Cupping',
+                customerRequests: 'Requested therapist bar',
+                date: 'Date navigation',
+                detail: 'Appointment detail modal',
+                doc: 'Document title',
+                error: 'Errors',
+                facial: 'Facial summary',
+                facialSpecialist: 'Facial specialist',
+                focus: 'Focus area popup',
+                header: 'Header',
+                label: 'Form labels',
+                lang: 'Language toggle',
+                link: 'Toolbar links',
+                loading: 'Loading',
+                modal: 'Modals',
+                next: 'Next available',
+                noBookings: 'Empty state',
+                noRoom: 'No-room alert',
+                noRooms: 'Block time alert',
+                order: 'Masseuse order bar',
+                panel: 'Panels',
+                right: 'Right column',
+                time: 'Time controls',
+                unassigned: 'Unassigned',
+                view: 'View toggle',
+                word: 'Common words',
+                zoom: 'Zoom',
+            };
+
+            function prefixTitle(p) {
+                return PREFIX_LABELS[p] || (p.charAt(0).toUpperCase() + p.slice(1));
+            }
+
+            function groupUiRows(rows) {
+                const g = {};
+                rows.forEach(function (r) {
+                    const i = r.key.indexOf('.');
+                    const p = i >= 0 ? r.key.slice(0, i) : 'other';
+                    if (!g[p]) g[p] = [];
+                    g[p].push(r);
+                });
+                return g;
+            }
+
+            function tableUiSection(prefix, rows) {
+                const title = prefixTitle(prefix);
+                const id = 'sec-ui-' + prefix.replace(/[^a-z0-9-]/gi, '-');
+                let body = rows.map(function (r) {
+                    return '<tr><td><code>' + esc(r.key) + '</code></td>' + tdEnglishWithSpeak(esc(r.en)) + '<td class="col-ipa phonetic">…</td>' + tdChineseWithSpeak(esc(r.zh)) + '<td class="col-py phonetic">…</td></tr>';
+                }).join('');
+                return (
+                    '<section id="' + id + '">' +
+                    '<h2>' + esc(title) + ' <span style="font-weight:400;color:#6c757d;font-size:12px">(' + esc(prefix) + '.*)</span></h2>' +
+                    '<table class="glossary-table" data-glossary-section><thead><tr><th>Key</th><th>English</th><th>US English (IPA)</th><th>中文</th><th>Pinyin</th></tr></thead><tbody>' +
+                    body +
+                    '</tbody></table></section>'
+                );
+            }
+
+            function applyFilter(q) {
+                const s = (q || '').trim().toLowerCase();
+                document.querySelectorAll('.glossary-table tbody tr').forEach(function (tr) {
+                    tr.style.display = !s || tr.textContent.toLowerCase().indexOf(s) >= 0 ? '' : 'none';
+                });
+            }
+
+            function setTechOpen(open) {
+                const btn = document.getElementById('glossaryTechBtn');
+                const panel = document.getElementById('glossaryTechPanel');
+                if (!btn || !panel) return;
+                btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+                if (open) {
+                    panel.removeAttribute('hidden');
+                    btn.textContent = 'Hide developer & computer terms (i18n keys, Square, API, calendar…)';
+                } else {
+                    panel.setAttribute('hidden', '');
+                    btn.textContent = 'Show developer & computer terms (i18n keys, Square, API, calendar…)';
+                }
+            }
+
+            function build() {
+                const mount = document.getElementById('glossaryMount');
+                const toc = document.getElementById('glossaryToc');
+                const api = window.MOM_I18N && window.MOM_I18N.exportGlossaryData;
+                if (!api) {
+                    mount.innerHTML = '<p class="err">Could not load glossary data. Ensure <code>i18n.js</code> is loaded.</p>';
+                    return;
+                }
+                const d = api();
+                const grouped = groupUiRows(d.uiRows);
+                const prefixes = Object.keys(grouped).sort(function (a, b) {
+                    return prefixTitle(a).localeCompare(prefixTitle(b), 'en');
+                });
+
+                let html = '';
+
+                html += '<section id="sec-phrases">';
+                html += '<h2>Massage, facial &amp; spa menu phrases</h2>';
+                html += '<p class="hint">English ↔ 中文 for services, add-ons, and wording that appears on the schedule and in notes (longer phrases match first in the app; variants may repeat).</p>';
+                html += '<table class="glossary-table" data-glossary-section><thead><tr><th>English</th><th>US English (IPA)</th><th>中文</th><th>Pinyin</th></tr></thead><tbody>';
+                d.phraseRows.forEach(function (pair) {
+                    html += '<tr>' + tdEnglishWithSpeak(esc(pair[0])) + '<td class="col-ipa phonetic">…</td>' + tdChineseWithSpeak(esc(pair[1])) + '<td class="col-py phonetic">…</td></tr>';
+                });
+                html += '</tbody></table></section>';
+
+                html += '<section id="sec-focus">';
+                html += '<h2>Focus areas (body)</h2>';
+                html += '<p class="hint">Check-in focus diagram and related labels.</p>';
+                html += '<table class="glossary-table" data-glossary-section><thead><tr><th>English</th><th>US English (IPA)</th><th>中文</th><th>Pinyin</th></tr></thead><tbody>';
+                d.focusRows.forEach(function (r) {
+                    html += '<tr>' + tdEnglishWithSpeak(esc(r.en)) + '<td class="col-ipa phonetic">…</td>' + tdChineseWithSpeak(esc(r.zh)) + '<td class="col-py phonetic">…</td></tr>';
+                });
+                html += '</tbody></table></section>';
+
+                html += '<section id="sec-pressure">';
+                html += '<h2>Pressure levels</h2>';
+                html += '<p class="hint">Pressure options shown at check-in.</p>';
+                html += '<table class="glossary-table" data-glossary-section><thead><tr><th>Value (English)</th><th>US English (IPA)</th><th>中文</th><th>Pinyin</th></tr></thead><tbody>';
+                d.pressureRows.forEach(function (r) {
+                    html += '<tr>' + tdEnglishWithSpeak(esc(r.en)) + '<td class="col-ipa phonetic">…</td>' + tdChineseWithSpeak(esc(r.zh)) + '<td class="col-py phonetic">…</td></tr>';
+                });
+                html += '</tbody></table></section>';
+
+                html += '<div class="glossary-tech">';
+                html += '<button type="button" class="glossary-tech-toggle" id="glossaryTechBtn" aria-expanded="false" aria-controls="glossaryTechPanel">';
+                html += 'Show developer &amp; computer terms (i18n keys, Square, API, calendar…)';
+                html += '</button>';
+                html += '<div class="glossary-tech-panel" id="glossaryTechPanel" hidden role="region" aria-label="Developer and i18n reference">';
+                html += '<p class="glossary-tech-intro" id="glossary-tech-start">For whoever maintains this software: internal keys (<code>calendar.*</code>, <code>detail.*</code>, <code>api.*</code>, toolbar <code>link.*</code>, Square-related strings, capacity math, etc.). Same translations as <code>static/i18n.js</code>.</p>';
+                html += '<section id="sec-ui-all"><h2>UI strings by topic</h2>';
+                html += '<p class="hint"><code>data-i18n</code> / <code>app.js</code> lookups.</p></section>';
+                prefixes.forEach(function (p) {
+                    html += tableUiSection(p, grouped[p]);
+                });
+                html += '</div></div>';
+
+                mount.innerHTML = html;
+
+                let tocHtml = '<span style="font-weight:600;color:#444">Staff:</span> ';
+                tocHtml += '<a href="#sec-phrases">Menu phrases</a>';
+                tocHtml += '<a href="#sec-focus">Focus areas</a>';
+                tocHtml += '<a href="#sec-pressure">Pressure</a>';
+                tocHtml += '<span class="toc-sep">|</span>';
+                tocHtml += '<span style="font-weight:600;color:#444">Build:</span> ';
+                tocHtml += '<a href="#glossary-tech-start" id="glossaryTocDevLink">Developer terms</a>';
+                toc.innerHTML = tocHtml;
+
+                document.getElementById('glossaryTechBtn').addEventListener('click', function () {
+                    const open = document.getElementById('glossaryTechPanel').hasAttribute('hidden');
+                    setTechOpen(open);
+                });
+
+                document.getElementById('glossaryTocDevLink').addEventListener('click', function (e) {
+                    e.preventDefault();
+                    setTechOpen(true);
+                    document.getElementById('glossary-tech-start').scrollIntoView({ behavior: 'smooth', block: 'start' });
+                });
+
+                const inp = document.getElementById('glossaryFilter');
+                inp.addEventListener('input', function () { applyFilter(inp.value); });
+                inp.addEventListener('search', function () { applyFilter(inp.value); });
+            }
+
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', build);
+            } else {
+                build();
+            }
+        })();
+    </script>
+    <script type="module">
+        const HAN = /[\u3000-\u9fff\uf900-\ufaff]/;
+        const SPEECH_RATE_STORAGE = 'momGlossarySpeechRate';
+        const SPEECH_RATE_MIN = 0.45;
+        const SPEECH_RATE_MAX = 1.05;
+
+        function clampSpeechRate(n) {
+            if (typeof n !== 'number' || isNaN(n)) return 0.85;
+            return Math.min(SPEECH_RATE_MAX, Math.max(SPEECH_RATE_MIN, n));
+        }
+
+        function getGlossarySpeechRate() {
+            const el = document.getElementById('glossarySpeechRate');
+            if (el) {
+                const v = parseFloat(el.value, 10);
+                if (!isNaN(v)) return clampSpeechRate(v);
+            }
+            try {
+                const stored = parseFloat(localStorage.getItem(SPEECH_RATE_STORAGE) || '', 10);
+                if (!isNaN(stored)) return clampSpeechRate(stored);
+            } catch (e) {}
+            return 0.85;
+        }
+
+        function initGlossarySpeechRateControl() {
+            const el = document.getElementById('glossarySpeechRate');
+            const out = document.getElementById('glossarySpeechRateVal');
+            if (!el) return;
+            try {
+                const saved = localStorage.getItem(SPEECH_RATE_STORAGE);
+                if (saved != null && saved !== '') {
+                    const v = clampSpeechRate(parseFloat(saved, 10));
+                    el.value = String(v);
+                }
+            } catch (e) {}
+            function sync() {
+                const v = clampSpeechRate(parseFloat(el.value, 10));
+                el.value = String(v);
+                if (out) out.textContent = v.toFixed(2) + '×';
+                try {
+                    localStorage.setItem(SPEECH_RATE_STORAGE, el.value);
+                } catch (e) {}
+            }
+            el.addEventListener('input', sync);
+            el.addEventListener('change', sync);
+            sync();
+        }
+
+        function setupGlossaryStickyTopSync() {
+            const el = document.getElementById('glossaryStickyTools');
+            if (!el) return;
+            function sync() {
+                document.documentElement.style.setProperty('--glossary-sticky-top', el.offsetHeight + 'px');
+            }
+            sync();
+            window.addEventListener('resize', sync);
+            if (typeof ResizeObserver !== 'undefined') {
+                const ro = new ResizeObserver(sync);
+                ro.observe(el);
+            }
+        }
+
+        function zhToPinyin(pinyinFn, s) {
+            if (!s || !HAN.test(s)) return '—';
+            try {
+                return pinyinFn(String(s).trim(), { toneType: 'symbol', type: 'string', separator: ' ' });
+            } catch (e) {
+                return '—';
+            }
+        }
+
+        function englishWords(s) {
+            return String(s || '').match(/[a-zA-Z]+(?:'[a-zA-Z]+)?/g) || [];
+        }
+
+        function ipaFromMap(map, key) {
+            if (!map || key == null || key === '') return null;
+            const k = String(key).trim();
+            const lower = k.toLowerCase();
+            const v = map[k] || map[lower];
+            return v != null && String(v).trim() !== '' ? String(v).trim() : null;
+        }
+
+        function enToIpa(map, s) {
+            if (!map || !s) return '—';
+            const raw = String(s).trim();
+            const spaced = raw.toLowerCase().replace(/\s+/g, ' ');
+            const slashy = spaced.replace(/\s*\/\s*/g, '/');
+            let whole = ipaFromMap(map, spaced) || ipaFromMap(map, slashy);
+            if (whole) return whole;
+            const words = englishWords(raw);
+            if (!words.length) return '—';
+            const parts = [];
+            for (let i = 0; i < words.length; i++) {
+                const w = words[i];
+                const ipa = ipaFromMap(map, w.toLowerCase()) || ipaFromMap(map, w);
+                if (ipa) parts.push(ipa);
+                else parts.push('·');
+            }
+            return parts.join(' ');
+        }
+
+        function fillPhoneticsTableRows(pinyinFn, ipaMap) {
+            const rows = document.querySelectorAll('#glossaryMount table.glossary-table tbody tr');
+            rows.forEach(function (tr) {
+                const enEl = tr.querySelector('.col-en-phrase');
+                const zhEl = tr.querySelector('.col-zh-phrase');
+                const ipaTd = tr.querySelector('.col-ipa');
+                const pyTd = tr.querySelector('.col-py');
+                if (!enEl || !zhEl || !ipaTd || !pyTd) return;
+                const en = enEl.textContent;
+                const zh = zhEl.textContent;
+                ipaTd.textContent = ipaMap ? enToIpa(ipaMap, en) : '—';
+                ipaTd.classList.add('phonetic');
+                pyTd.textContent = pinyinFn ? zhToPinyin(pinyinFn, zh) : '—';
+                pyTd.classList.add('phonetic');
+            });
+        }
+
+        function pickEnUSVoice() {
+            const voices = speechSynthesis.getVoices();
+            let i;
+            for (i = 0; i < voices.length; i++) {
+                if (voices[i].lang === 'en-US') return voices[i];
+            }
+            for (i = 0; i < voices.length; i++) {
+                if (voices[i].lang && voices[i].lang.indexOf('en') === 0) return voices[i];
+            }
+            return null;
+        }
+
+        function pickZhCNVoice() {
+            const voices = speechSynthesis.getVoices();
+            let i;
+            for (i = 0; i < voices.length; i++) {
+                if (voices[i].lang === 'zh-CN') return voices[i];
+            }
+            for (i = 0; i < voices.length; i++) {
+                const L = voices[i].lang || '';
+                if (L.indexOf('zh-CN') === 0 || L.indexOf('cmn') === 0) return voices[i];
+            }
+            for (i = 0; i < voices.length; i++) {
+                if (voices[i].lang && voices[i].lang.indexOf('zh') === 0) return voices[i];
+            }
+            return null;
+        }
+
+        function wireGlossarySpeakButtons() {
+            const root = document.getElementById('glossaryMount');
+            if (!root || !window.speechSynthesis) return;
+            if (root.dataset.speakWired === '1') return;
+            root.dataset.speakWired = '1';
+            root.addEventListener('click', function (e) {
+                const btnZh = e.target.closest('button.glossary-speak-zh');
+                const btnEn = btnZh ? null : e.target.closest('button.glossary-speak');
+                const btn = btnZh || btnEn;
+                if (!btn || !root.contains(btn)) return;
+                e.preventDefault();
+                let text = '';
+                let lang = 'en-US';
+                let pickVoice = pickEnUSVoice;
+                if (btnZh) {
+                    const td = btn.closest('td.col-zh');
+                    const phraseEl = td && td.querySelector('.col-zh-phrase');
+                    text = phraseEl ? phraseEl.textContent.trim() : '';
+                    lang = 'zh-CN';
+                    pickVoice = pickZhCNVoice;
+                } else {
+                    const td = btn.closest('td.col-en');
+                    const phraseEl = td && td.querySelector('.col-en-phrase');
+                    text = phraseEl ? phraseEl.textContent.trim() : '';
+                }
+                if (!text) return;
+                speechSynthesis.cancel();
+                const u = new SpeechSynthesisUtterance(text);
+                u.lang = lang;
+                u.rate = getGlossarySpeechRate();
+                const v = pickVoice();
+                if (v) u.voice = v;
+                speechSynthesis.speak(u);
+            });
+            speechSynthesis.getVoices();
+        }
+
+        async function run() {
+            const statusEl = document.getElementById('phoneticsStatus');
+            let pinyinFn = null;
+            let ipaMap = null;
+
+            initGlossarySpeechRateControl();
+            setupGlossaryStickyTopSync();
+
+            try {
+                const mod = await import('https://esm.sh/pinyin-pro@3.26.0');
+                pinyinFn = mod.pinyin;
+                if (typeof pinyinFn !== 'function') {
+                    throw new Error('pinyin export missing');
+                }
+            } catch (e) {
+                if (statusEl) {
+                    statusEl.hidden = false;
+                    statusEl.textContent = 'Could not load Pinyin (pinyin-pro from CDN). Check internet or try again.';
+                }
+            }
+
+            try {
+                const res = await fetch('/static/glossary_ipa_words.json', { cache: 'no-store' });
+                if (!res.ok) throw new Error('HTTP ' + res.status);
+                ipaMap = await res.json();
+            } catch (e) {
+                if (statusEl) {
+                    statusEl.hidden = false;
+                    const prev = statusEl.textContent || '';
+                    const msg = 'Could not load US English IPA list (/static/glossary_ipa_words.json). Open this page via the app server, not as a file.';
+                    statusEl.textContent = prev ? prev + ' ' + msg : msg;
+                }
+            }
+
+            if (pinyinFn) {
+                fillPhoneticsTableRows(pinyinFn, ipaMap);
+            }
+            wireGlossarySpeakButtons();
+            if (!window.speechSynthesis && statusEl) {
+                statusEl.hidden = false;
+                const extra = ' This browser does not support text-to-speech (▶ will not play).';
+                if (statusEl.textContent.indexOf('text-to-speech') === -1) {
+                    statusEl.textContent = (statusEl.textContent || 'Note:') + extra;
+                }
+            }
+        }
+
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', function () {
+                setTimeout(run, 0);
+            });
+        } else {
+            setTimeout(run, 0);
+        }
+    </script>
+</body>
+</html>

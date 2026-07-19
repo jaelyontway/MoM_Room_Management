@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 236 32" width="236" height="32" role="img" aria-label="Massage on Main">
+  <rect width="236" height="32" rx="6" fill="#ffffff" stroke="#dee2e6"/>
+  <text font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="19" font-weight="800">
+    <tspan x="7" y="22" fill="#0d3b66">M</tspan><tspan fill="#26c6da">assage</tspan>
+    <tspan fill="#0d3b66"> on </tspan>
+    <tspan fill="#0d3b66">M</tspan><tspan fill="#26c6da">ain</tspan>
+  </text>
+</svg>

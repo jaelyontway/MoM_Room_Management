@@ -46,3 +46,9 @@ square_bookings_sync*.log
 .DS_Store
 Thumbs.db
 
+# Dashboard calendar screenshots (uploaded PNG/JPEG)
+calendar_screenshots/
+
+# Runtime roster overrides (auto-detected masseuse add/ignore choices)
+roster_overrides.json
+
