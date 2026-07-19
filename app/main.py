@@ -1171,6 +1171,7 @@ def _assigned_bookings_for_date(
             'booked_by': booking.get('booked_by'),
             'package_type': pkg_row,
             'display_service': disp_row,
+            'service_segments': booking.get('service_segments'),
         })
         bookings_for_assignment.append(row)
 
@@ -1328,6 +1329,7 @@ def build_day_response_for_date(
             service=booking["service"],
             package_type=pkg_type,
             display_service=display_svc,
+            service_segments=booking.get("service_segments") or None,
             type=booking["type"],
             room=booking["room"],
             reason=booking.get("reason"),
@@ -1477,6 +1479,7 @@ def build_day_response_for_date(
         display_end_dt = end_dt - timedelta(minutes=neutral) if neutral else end_dt
         svc = (e.display_service or e.service or "").strip()
         customer_requests_items.append({
+            "booking_id": e.booking_id or "",
             "requested_masseuse": req,
             "customer": e.customer or "",
             "service": svc,
@@ -4655,6 +4658,66 @@ async def delete_calendar_screenshot(screenshot_id: int, db: Session = Depends(g
     db.delete(row)
     db.commit()
     return {"success": True, "id": screenshot_id}
+
+
+def _appt_records_dir() -> str:
+    """Hard-drive folder for daily masseuse scheduling sheet archives."""
+    d = os.path.join(os.path.dirname(os.path.dirname(__file__)), "appt records")
+    os.makedirs(d, exist_ok=True)
+    return d
+
+
+def _appt_record_path(date: str) -> str:
+    return os.path.join(_appt_records_dir(), f"{date}.json")
+
+
+@app.put("/api/appt-records/{date}")
+async def save_appt_record(date: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Save one day's scheduling sheet JSON under appt records/YYYY-MM-DD.json."""
+    date = (date or "").strip()
+    try:
+        datetime.strptime(date, "%Y-%m-%d")
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid date (use YYYY-MM-DD)")
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="Body must be a JSON object")
+    body = dict(payload)
+    body["date"] = date
+    body["saved_at"] = body.get("saved_at") or datetime.now(timezone.utc).isoformat()
+    path = _appt_record_path(date)
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(body, f, ensure_ascii=False, indent=2)
+    return {"success": True, "date": date, "path": path}
+
+
+@app.get("/api/appt-records/{date}")
+async def get_appt_record(date: str) -> Dict[str, Any]:
+    """Load a previously saved scheduling sheet for a date, if present."""
+    date = (date or "").strip()
+    try:
+        datetime.strptime(date, "%Y-%m-%d")
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid date (use YYYY-MM-DD)")
+    path = _appt_record_path(date)
+    if not os.path.isfile(path):
+        raise HTTPException(status_code=404, detail="No saved sheet for this date")
+    with open(path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    if not isinstance(data, dict):
+        raise HTTPException(status_code=500, detail="Corrupt appt record")
+    return data
+
+
+@app.get("/api/appt-records")
+async def list_appt_records() -> Dict[str, Any]:
+    """List dates that have a saved scheduling sheet on disk."""
+    d = _appt_records_dir()
+    dates = sorted(
+        name[:-5]
+        for name in os.listdir(d)
+        if name.endswith(".json") and len(name) == 15
+    )
+    return {"dates": dates, "folder": d}
 
 
 # Serve static files (mount AFTER API routes to avoid conflicts)

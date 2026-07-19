@@ -1013,22 +1013,11 @@
     }
 
     function formatDurationMinutes(minutes) {
-        const m = Number(minutes);
+        const m = Math.round(Number(minutes));
         if (!Number.isFinite(m) || m < 0) return '';
         const mode = getMode();
-        function enFmt() {
-            if (m < 60) return m + ' min';
-            const h = Math.floor(m / 60);
-            const mm = m % 60;
-            return mm ? h + 'h ' + mm + 'm' : h + 'h';
-        }
-        function zhFmt() {
-            if (m < 60) return m + '分钟';
-            const h = Math.floor(m / 60);
-            const mm = m % 60;
-            if (mm === 0) return h + '小时';
-            return h + '小时' + mm + '分';
-        }
+        const enFmt = () => m + ' min';
+        const zhFmt = () => m + '分钟';
         if (mode === 'en') return enFmt();
         if (mode === 'zh') return zhFmt();
         const a = enFmt();

@@ -49,6 +49,9 @@ Thumbs.db
 # Dashboard calendar screenshots (uploaded PNG/JPEG)
 calendar_screenshots/
 
+# Daily masseuse scheduling sheet archives (keep folder, ignore JSON contents)
+appt records/*.json
+
 # Runtime roster overrides (auto-detected masseuse add/ignore choices)
 roster_overrides.json
 

@@ -1,0 +1,526 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Masseuse Scheduling Sheet</title>
+    <style>
+        :root {
+            --ink: #1a1a1a;
+            --line: #222;
+            --muted: #555;
+            --bg: #eef1f4;
+            --panel: #fff;
+            --accent: #0d6efd;
+        }
+        * { box-sizing: border-box; }
+        html {
+            height: auto;
+            min-height: 100%;
+        }
+        body {
+            margin: 0;
+            padding: 8px 10px 40px;
+            min-height: 100%;
+            height: auto;
+            background: var(--bg);
+            color: var(--ink);
+            font-family: "Segoe UI", Tahoma, sans-serif;
+            overflow-x: hidden;
+            overflow-y: auto;
+        }
+        .mss-header {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px 12px;
+            margin-bottom: 6px;
+        }
+        .mss-header h1 {
+            margin: 0;
+            font-size: 1.2rem;
+            font-weight: 700;
+        }
+        .mss-controls {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 6px;
+        }
+        .mss-controls label { font-weight: 600; font-size: 13px; }
+        .mss-controls input[type="date"] {
+            padding: 6px 8px;
+            border: 1px solid #ced4da;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        .mss-controls button,
+        .mss-controls a.mss-btn {
+            padding: 7px 11px;
+            border: 1px solid #0b5ed7;
+            border-radius: 5px;
+            background: var(--accent);
+            color: #fff;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+        }
+        .mss-controls button.secondary,
+        .mss-controls a.mss-btn.secondary {
+            background: #fff;
+            color: #084298;
+            border-color: #0d6efd;
+        }
+        .mss-controls button.print-btn {
+            background: #198754;
+            border-color: #157347;
+        }
+        .mss-controls button.warn-btn {
+            background: #fff3cd;
+            color: #664d03;
+            border-color: #ffc107;
+        }
+        .mss-nav-btn {
+            width: 32px;
+            height: 32px;
+            padding: 0 !important;
+            background: #e9ecef !important;
+            color: #212529 !important;
+            border-color: #ced4da !important;
+        }
+        .mss-status {
+            min-height: 1.2em;
+            font-size: 13px;
+            color: var(--muted);
+            margin-bottom: 6px;
+        }
+        .mss-status.error { color: #b00020; font-weight: 600; }
+        .mss-rules {
+            background: var(--panel);
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            padding: 8px 12px;
+            margin-bottom: 8px;
+            font-size: 13px;
+            line-height: 1.4;
+        }
+        .mss-rules summary {
+            cursor: pointer;
+            font-weight: 700;
+            color: #084298;
+        }
+        .mss-rules-body { margin-top: 8px; color: #333; }
+        .mss-rules-body ul { margin: 6px 0 0; padding-left: 1.2rem; }
+
+        .mss-fit-host {
+            width: 100%;
+            overflow-x: hidden;
+            overflow-y: visible;
+            /* Allow page scroll when extra masseuses are added */
+            min-height: 0;
+        }
+        .mss-fit-host.mss-has-extra {
+            overflow-y: visible;
+        }
+        .mss-sheet {
+            background: var(--panel);
+            border: 1px solid #cfd4da;
+            border-radius: 8px;
+            padding: 10px 12px 12px;
+            transform-origin: top left;
+            width: 100%;
+            max-width: none;
+        }
+        .mss-date-line {
+            display: flex;
+            align-items: baseline;
+            gap: 10px;
+            margin-bottom: 12px;
+            font-size: 20px;
+            font-weight: 700;
+        }
+        .mss-date-boxes {
+            display: inline-flex;
+            gap: 4px;
+            font-weight: 600;
+        }
+        .mss-date-box {
+            min-width: 1.55em;
+            padding: 3px 7px;
+            border: 1.5px solid var(--line);
+            text-align: center;
+            font-variant-numeric: tabular-nums;
+            font-size: 18px;
+        }
+
+        .mss-grid {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 10px;
+        }
+        .mss-grid-extra {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 10px;
+            margin-top: 16px;
+            padding-top: 16px;
+            border-top: 2px dashed #adb5bd;
+        }
+        .mss-extra-label {
+            grid-column: 1 / -1;
+            font-size: 17px;
+            font-weight: 700;
+            color: #495057;
+            margin-bottom: -4px;
+        }
+        .mss-card {
+            border: 2px solid var(--line);
+            background: #fff;
+            min-width: 0;
+        }
+        .mss-card-title {
+            border-bottom: 2px solid var(--line);
+            padding: 6px 7px;
+            font-weight: 700;
+            font-size: 17px;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            background: #f1f3f5;
+        }
+        .mss-card-title .mss-slot-num {
+            flex-shrink: 0;
+            font-size: 16px;
+        }
+        .mss-card-title input.mss-name-input {
+            flex: 1;
+            min-width: 0;
+            border: 1px solid #ced4da;
+            border-radius: 4px;
+            padding: 5px 6px;
+            font-size: 17px;
+            font-weight: 700;
+            font-family: inherit;
+        }
+        .mss-card-title input.mss-name-input:focus {
+            outline: 2px solid #0d6efd;
+            border-color: #0d6efd;
+        }
+        .mss-table {
+            width: 100%;
+            border-collapse: collapse;
+            table-layout: fixed;
+            font-size: 15px;
+        }
+        .mss-table th,
+        .mss-table td {
+            border: 1.5px solid var(--line);
+            padding: 0;
+            vertical-align: middle;
+        }
+        .mss-table th {
+            background: #e9ecef;
+            font-weight: 700;
+            text-align: center;
+            padding: 5px 1px;
+            font-size: 13px;
+        }
+        .mss-table td.num,
+        .mss-table th.col-num {
+            width: 18px;
+            text-align: center;
+            font-weight: 700;
+            font-size: 14px;
+            padding: 2px 0;
+        }
+        /* Shorter NM + Dur; bigger text; room for Price/Tip/Note */
+        .mss-table th.col-nm,
+        .mss-table td.nm { width: 12%; }
+        .mss-table th.col-rm,
+        .mss-table td.rm { width: 11%; }
+        .mss-table th.col-dur,
+        .mss-table td.dur { width: 12%; }
+        .mss-table th.col-price,
+        .mss-table td.price { width: 15%; }
+        .mss-table th.col-tip,
+        .mss-table td.tip { width: 15%; }
+        .mss-table th.col-note,
+        .mss-table td.note { width: 27%; }
+        .mss-table td.dur input.mss-cell {
+            font-size: 14px;
+            padding: 6px 1px;
+            letter-spacing: -0.04em;
+            font-weight: 600;
+        }
+        .mss-table input.mss-cell {
+            width: 100%;
+            border: 0;
+            margin: 0;
+            padding: 6px 2px;
+            font: inherit;
+            font-size: 15px;
+            background: transparent;
+            color: inherit;
+            min-width: 0;
+        }
+        .mss-table td.tip input.mss-cell,
+        .mss-table td.note input.mss-cell {
+            font-size: 14px;
+            padding: 6px 2px;
+        }
+        .mss-table input.mss-cell.mss-nm-clickable {
+            cursor: pointer;
+            color: #084298;
+            text-decoration: underline;
+            text-underline-offset: 2px;
+            font-weight: 700;
+            font-size: 15px;
+        }
+        .mss-table input.mss-cell:focus {
+            outline: 2px solid #0d6efd;
+            background: #fff;
+            position: relative;
+            z-index: 1;
+        }
+        .mss-table input.mss-cell.edited {
+            background: #fff8e1;
+        }
+        .mss-table tr.row-req input.mss-cell {
+            background: #fff8e6;
+        }
+        .mss-table tr.row-req input.mss-cell.edited {
+            background: #ffe082;
+        }
+        .mss-table tr.row-warn td.num {
+            background: #ffcdd2;
+        }
+        .mss-hint {
+            margin-top: 10px;
+            font-size: 14px;
+            color: #666;
+        }
+
+        /* Detail modal (click customer name) */
+        .mss-modal[hidden] { display: none !important; }
+        .mss-modal {
+            position: fixed;
+            inset: 0;
+            z-index: 2000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 16px;
+        }
+        .mss-modal-backdrop {
+            position: absolute;
+            inset: 0;
+            background: rgba(0,0,0,0.45);
+        }
+        .mss-modal-dialog {
+            position: relative;
+            z-index: 1;
+            background: #fff;
+            border-radius: 10px;
+            max-width: 520px;
+            width: 100%;
+            padding: 18px 20px;
+            box-shadow: 0 8px 28px rgba(0,0,0,0.25);
+            font-size: 15px;
+        }
+        .mss-modal-dialog h2 {
+            margin: 0 0 12px;
+            font-size: 1.25rem;
+        }
+        .mss-modal-dialog dl {
+            margin: 0;
+            display: grid;
+            grid-template-columns: 7.5rem 1fr;
+            gap: 6px 10px;
+        }
+        .mss-modal-dialog dt { font-weight: 700; color: #555; }
+        .mss-modal-dialog dd { margin: 0; }
+        .mss-modal-close {
+            margin-top: 14px;
+            padding: 8px 14px;
+            border: 1px solid #adb5bd;
+            border-radius: 6px;
+            background: #f8f9fa;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+        }
+        .mss-modal-dialog.mss-picker-dialog {
+            max-width: 560px;
+            max-height: min(85vh, 720px);
+            display: flex;
+            flex-direction: column;
+        }
+        .mss-picker-hint {
+            margin: 0 0 10px;
+            font-size: 13px;
+            color: #555;
+            line-height: 1.35;
+        }
+        .mss-picker-search {
+            width: 100%;
+            padding: 10px 12px;
+            font-size: 16px;
+            border: 1px solid #ced4da;
+            border-radius: 6px;
+            margin-bottom: 10px;
+            box-sizing: border-box;
+        }
+        .mss-picker-list {
+            overflow-y: auto;
+            flex: 1;
+            border: 1px solid #dee2e6;
+            border-radius: 6px;
+            min-height: 180px;
+        }
+        .mss-picker-item {
+            display: block;
+            width: 100%;
+            text-align: left;
+            padding: 10px 12px;
+            border: 0;
+            border-bottom: 1px solid #eee;
+            background: #fff;
+            cursor: pointer;
+            font-size: 15px;
+            font-family: inherit;
+        }
+        .mss-picker-item:hover,
+        .mss-picker-item:focus {
+            background: #e7f1ff;
+            outline: none;
+        }
+        .mss-picker-item.current {
+            background: #fff3cd;
+            font-weight: 700;
+        }
+        .mss-picker-item .mss-picker-meta {
+            display: block;
+            font-size: 12px;
+            color: #666;
+            margin-top: 2px;
+            font-weight: 500;
+        }
+        .mss-picker-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 12px;
+        }
+        .mss-picker-actions button {
+            padding: 8px 12px;
+            border-radius: 6px;
+            border: 1px solid #adb5bd;
+            background: #f8f9fa;
+            font-weight: 600;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        .mss-picker-actions button.primary {
+            background: #0d6efd;
+            border-color: #0b5ed7;
+            color: #fff;
+        }
+
+        @media print {
+            body { background: #fff; padding: 4px; overflow: visible; }
+            .mss-header .mss-controls button:not(.print-btn),
+            .mss-header .mss-controls a.mss-btn,
+            .mss-rules,
+            .mss-hint { display: none !important; }
+            .mss-sheet {
+                box-shadow: none;
+                border: none;
+                padding: 0;
+                transform: none !important;
+            }
+            .mss-fit-host { overflow: visible; }
+            @page { size: landscape; margin: 6mm; }
+        }
+    </style>
+</head>
+<body>
+    <div class="mss-header">
+        <h1>Masseuse Scheduling Sheet</h1>
+        <div class="mss-controls">
+            <a class="mss-btn secondary" href="/" title="Back to calendar">← Calendar</a>
+            <label for="mssDate">Date:</label>
+            <button type="button" class="mss-nav-btn" id="mssPrevDay" title="Previous day">◀</button>
+            <input type="date" id="mssDate" />
+            <button type="button" class="mss-nav-btn" id="mssNextDay" title="Next day">▶</button>
+            <button type="button" id="mssLoadBtn" title="Reload from calendar and keep your edits">Load</button>
+            <button type="button" class="secondary" id="mssRefreshBtn" title="Same as Load">Refresh</button>
+            <button type="button" class="warn-btn" id="mssClearEditsBtn" title="Clear local edits for this date">Clear edits</button>
+            <button type="button" class="secondary" id="mssAddMasseuseBtn" title="Add an extra masseuse block (may need scroll)">+ Masseuse</button>
+            <button type="button" class="print-btn" id="mssPrintBtn">Print</button>
+            <a class="mss-btn secondary" href="/static/docs/sheet_rules.md" target="_blank" rel="noopener">Rules</a>
+        </div>
+    </div>
+
+    <div id="mssStatus" class="mss-status">Pick a date and click Load.</div>
+
+    <details class="mss-rules" id="mssRules">
+        <summary>Rules (from sheet_rules.md) — manager can override anything by editing cells</summary>
+        <div class="mss-rules-body">
+            <ul>
+                <li><strong>#</strong> customer count · <strong>NM</strong> name · <strong>RM</strong> room · <strong>Dur</strong> = start–end time · <strong>Price</strong> = 60/90… minutes · <strong>Tip</strong> · <strong>Note</strong> = 3 senses / facial / cupping / other massage add-ons (not aromatherapy, scalp oil, pain relief oil, or 大套).</li>
+                <li>Non-requested appts follow <strong>turn order</strong>; requested appts still count as a turn (she can take other customers when it is her turn again)</li>
+                <li>Requested masseuse → schedule around that appt’s time/duration</li>
+                <li>Couples use <strong>2 masseuses</strong> at the same time</li>
+                <li>Only <strong>Tina</strong> for facial / lymphatic · only <strong>Casey/Cassey</strong> &amp; <strong>May</strong> for trigger point (auto-assign; you can still override)</li>
+                <li>All cells are editable; tips sync from calendar tips and stay editable</li>
+                <li>Extra masseuses (+ Masseuse) appear below and may scroll</li>
+                <li>Click <strong>NM</strong> (including empty) → search and choose a customer · Details inside picker</li>
+                <li>Edits auto-save in this browser · each day also saves to hard drive folder <strong>appt records</strong></li>
+            </ul>
+        </div>
+    </details>
+
+    <div class="mss-fit-host" id="mssFitHost">
+        <div class="mss-sheet" id="mssSheet" hidden>
+            <div class="mss-date-line">
+                <span>Date:</span>
+                <span class="mss-date-boxes" id="mssDateBoxes"></span>
+                <span id="mssDateLabel" style="font-weight:600;color:#555;"></span>
+            </div>
+            <div class="mss-grid" id="mssGrid"></div>
+            <div class="mss-grid-extra" id="mssGridExtra" hidden></div>
+            <p class="mss-hint">Yellow = saved edits · Click <strong>NM</strong> (empty or filled) to search a customer · Tip syncs to calendar · Saved to <strong>appt records</strong></p>
+        </div>
+    </div>
+
+    <div id="mssDetailModal" class="mss-modal" hidden>
+        <div class="mss-modal-backdrop" id="mssDetailBackdrop"></div>
+        <div class="mss-modal-dialog" role="dialog" aria-modal="true" aria-labelledby="mssDetailTitle">
+            <h2 id="mssDetailTitle">Appointment</h2>
+            <div id="mssDetailBody"></div>
+            <button type="button" class="mss-modal-close" id="mssDetailClose">Close</button>
+        </div>
+    </div>
+
+    <div id="mssPickerModal" class="mss-modal" hidden>
+        <div class="mss-modal-backdrop" id="mssPickerBackdrop"></div>
+        <div class="mss-modal-dialog mss-picker-dialog" role="dialog" aria-modal="true" aria-labelledby="mssPickerTitle">
+            <h2 id="mssPickerTitle">Choose customer</h2>
+            <p class="mss-picker-hint" id="mssPickerHint">Tap a name to put that appointment on this masseuse row. If they are already on the sheet, the two rows swap.</p>
+            <input type="search" id="mssPickerSearch" class="mss-picker-search" placeholder="Search customer, room, or time…" autocomplete="off" />
+            <div id="mssPickerList" class="mss-picker-list"></div>
+            <div class="mss-picker-actions">
+                <button type="button" class="primary" id="mssPickerDetailsBtn" hidden>View details</button>
+                <button type="button" id="mssPickerClearBtn">Clear this row</button>
+                <button type="button" id="mssPickerCloseBtn">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/masseuse_scheduling_sheet.js?v=9"></script>
+</body>
+</html>

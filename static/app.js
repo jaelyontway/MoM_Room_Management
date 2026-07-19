@@ -3271,11 +3271,11 @@ function appendRoomViewSuperheaderRow(grid, columns) {
         else if (CALENDAR_ROOM_GROUP_SINGLE.has(c)) nSingle += 1;
         else if (CALENDAR_ROOM_GROUP_COUPLE.has(c)) nCouple += 1;
     }
-    const firstRoomCol = 5; /* after Staff + Rooms + capacity + Time */
+    const firstRoomCol = 2; /* after Time only (Staff / Rooms / Capacity sidebars removed) */
     const corner = document.createElement('div');
     corner.className = 'room-superheader-corner';
     corner.setAttribute('aria-hidden', 'true');
-    corner.style.gridColumn = '1 / span 4';
+    corner.style.gridColumn = '1 / span 1';
     corner.style.gridRow = '1';
     grid.appendChild(corner);
 
@@ -3345,7 +3345,9 @@ const PHONE_CALENDAR_LAYOUT_KEY = 'mom_calendar_phone_layout';
 const MOM_DESKTOP_PHONE_LIST_MODE_KEY = 'mom_desktop_phone_list_mode';
 const MOM_DESKTOP_PHONE_LIST_POS_KEY = 'mom_desktop_phone_list_float_pos';
 const MOM_APPOINTMENT_DETAIL_POS_KEY = 'mom_appointment_detail_pos';
-const CALENDAR_ZOOM_OPTIONS = [0.5, 0.67, 0.85, 1, 1.2, 1.5]; // slot height = 30 * zoom
+/** Base px height of one calendar time row at 100% zoom (left timestamp + grid rows). */
+const CALENDAR_BASE_SLOT_HEIGHT_PX = 44;
+const CALENDAR_ZOOM_OPTIONS = [0.5, 0.67, 0.85, 1, 1.2, 1.5]; // slot height = BASE * zoom
 const DEFAULT_CALENDAR_ZOOM = 1;
 
 function getCalendarZoom() {
@@ -3369,7 +3371,7 @@ function setCalendarZoom(z) {
     setTimeout(() => momCalendarStickyToolbarSync(), 80);
 }
 function getCalendarSlotHeight() {
-    return Math.round(30 * getCalendarZoom());
+    return Math.round(CALENDAR_BASE_SLOT_HEIGHT_PX * getCalendarZoom());
 }
 function updateCalendarZoomUI() {
     const valEl = document.getElementById('calendarZoomValue');
@@ -5689,6 +5691,21 @@ function openDailyGrid(ev) {
     window.open('/static/grid.html?date=' + encodeURIComponent(date), '_blank', 'noopener');
 }
 
+/** Open masseuse scheduling sheet (NM/RM/Price/Tip/Note) for the calendar date. */
+function openMasseuseSchedulingSheet(ev) {
+    if (ev) ev.preventDefault();
+    const dateEl = document.getElementById('dateInput');
+    const date = dateEl && dateEl.value && /^\d{4}-\d{2}-\d{2}$/.test(dateEl.value) ? dateEl.value : (new Date().toISOString().slice(0, 10));
+    window.open('/static/masseuse_scheduling_sheet.html?date=' + encodeURIComponent(date), '_blank', 'noopener');
+}
+
+function initMasseuseSchedulingSheetLink() {
+    const link = document.getElementById('masseuseSchedulingSheetLink');
+    if (!link || link.dataset.mssBound === '1') return;
+    link.dataset.mssBound = '1';
+    link.addEventListener('click', openMasseuseSchedulingSheet);
+}
+
 function auditFormatLocalFromIso(iso) {
     if (!iso) return '';
     try {
@@ -5983,6 +6000,7 @@ document.addEventListener('DOMContentLoaded', () => {
     checkApiStatus();
     initHeaderToolbarLinksToggle();
     initLanShareModal();
+    initMasseuseSchedulingSheetLink();
     initCalendarZoom();
     initPhoneCalendarLayoutToggle();
     initDesktopPhoneListMirrorPanel();
@@ -6050,6 +6068,11 @@ function initHeaderToolbarLinksToggle() {
         refreshHeaderToolbarLinksToggleTitles();
     }
 
+    /* Toggle button removed from UI — keep report links panel always open */
+    if (btn.hidden || btn.getAttribute('aria-hidden') === 'true') {
+        setToolbarLinksCollapsed(false);
+        return;
+    }
     let startCollapsed = false;
     try {
         startCollapsed = sessionStorage.getItem(HEADER_TOOLBAR_LINKS_KEY) === '0';
@@ -8042,6 +8065,14 @@ function formatTimeCompactUS(isoOrDate) {
     return s.replace(/\s+(AM|PM)/i, '$1').replace(/:00(?=[AP]M)/i, '');
 }
 
+/** 12-hour clock fragment without AM/PM (:00 omitted on the hour). */
+function formatClock12NoMeridiem(h24, min) {
+    let h = h24 % 12;
+    if (h === 0) h = 12;
+    if (min === 0) return String(h);
+    return h + ':' + String(min).padStart(2, '0');
+}
+
 /**
  * Compact time range: if both times are AM or both PM → "4:30-7PM" (meridiem once; :00 omitted on the hour).
  * If span crosses noon/midnight → "11:30AM-1PM".
@@ -8054,21 +8085,272 @@ function formatTimeRangeSmart(startIsoOrDate, endIsoOrDate) {
     const eh = e.getHours();
     const sm = s.getMinutes();
     const em = e.getMinutes();
-    function clock12(h24, min) {
-        let h = h24 % 12;
-        if (h === 0) h = 12;
-        if (min === 0) return String(h);
-        return h + ':' + String(min).padStart(2, '0');
-    }
     const sIsAm = sh < 12;
     const eIsAm = eh < 12;
     if (sIsAm === eIsAm) {
         const mer = sh >= 12 ? 'PM' : 'AM';
-        return clock12(sh, sm) + '-' + clock12(eh, em) + mer;
+        return formatClock12NoMeridiem(sh, sm) + '-' + formatClock12NoMeridiem(eh, em) + mer;
     }
     const merS = sh >= 12 ? 'PM' : 'AM';
     const merE = eh >= 12 ? 'PM' : 'AM';
-    return clock12(sh, sm) + merS + '-' + clock12(eh, em) + merE;
+    return formatClock12NoMeridiem(sh, sm) + merS + '-' + formatClock12NoMeridiem(eh, em) + merE;
+}
+
+/** Calendar sandwich card: start–end without AM/PM, e.g. "2:30-3:30". */
+function formatTimeRangeNoAmPm(startIsoOrDate, endIsoOrDate) {
+    const s = startIsoOrDate instanceof Date ? startIsoOrDate : new Date(startIsoOrDate);
+    const e = endIsoOrDate instanceof Date ? endIsoOrDate : new Date(endIsoOrDate);
+    if (Number.isNaN(s.getTime()) || Number.isNaN(e.getTime())) return '';
+    return formatClock12NoMeridiem(s.getHours(), s.getMinutes()) + '-' + formatClock12NoMeridiem(e.getHours(), e.getMinutes());
+}
+
+/**
+ * Shorten service labels for sandwich cards:
+ * Deep Tissue Massage → Deep Tissue; Swedish Massage → Swedish; Trigger Point Therapy → Trigger Point.
+ */
+function calendarShortenServiceNameForSandwich(name) {
+    let s = String(name || '').trim();
+    if (!s) return '';
+    s = s.replace(/\bdeep\s+tissue\s+massage\b/gi, 'Deep Tissue');
+    s = s.replace(/\bswedish\s+massage\b/gi, 'Swedish');
+    s = s.replace(/\btrigger\s+point\s+therapy\b/gi, 'Trigger Point');
+    return s.replace(/\s{2,}/g, ' ').trim();
+}
+
+/** Minutes advertised in a Square segment title, e.g. "60 Minute Deep Tissue" → 60. */
+function calendarParseServiceSegmentDurationMinutes(segment) {
+    const s = String(segment || '').trim();
+    if (!s) return null;
+    const patterns = [
+        /\b(\d{1,3})\s*(?:minutes?|mins?|min\.?)\b/i,
+        /\b(\d{1,3})\s*分钟\b/,
+    ];
+    for (const pat of patterns) {
+        const m = s.match(pat);
+        if (m) {
+            const n = parseInt(m[1], 10);
+            if (n >= 15 && n <= 240) return n;
+        }
+    }
+    const sl = s.toLowerCase();
+    if (/\b1\.5\s*[-\u2013]?\s*(?:h|hr|hour|hours)\b/.test(sl)) return 90;
+    if (/\b2\s*[-\u2013]?\s*(?:h|hr|hour|hours)\b/.test(sl)) return 120;
+    return null;
+}
+
+function calendarStripDurationWordsFromServiceName(name) {
+    return String(name || '')
+        .replace(/\b\d{1,3}\s*(?:minutes?|mins?|min\.?)\b/gi, ' ')
+        .replace(/\b\d{1,3}\s*分钟\b/g, ' ')
+        .replace(/\b1\.5\s*[-\u2013]?\s*(?:h|hr|hour|hours)\b/gi, ' ')
+        .replace(/\b2\s*[-\u2013]?\s*(?:h|hr|hour|hours)\b/gi, ' ')
+        .replace(/\s*[·•]\s*/g, ' ')
+        .replace(/\s{2,}/g, ' ')
+        .trim();
+}
+
+/**
+ * Split Square multi-service strings into raw segments (keep original titles for duration parse).
+ * "60 Minute Deep Tissue Massage, 30 Minute Trigger Point Therapy" → two segments.
+ */
+function calendarRawServiceSegmentsForSandwich(text) {
+    const raw = String(text || '').trim();
+    if (!raw) return [];
+    const out = [];
+    for (const line of raw.split(/\n+/)) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        if (/^couples?\s*·/i.test(trimmed) || /情侣/.test(trimmed)) {
+            out.push(trimmed);
+            continue;
+        }
+        const protectedLine = trimmed
+            .replace(/\bdeep\s+tissue\s+massage\b/gi, '<<<DEEP_TISSUE_MASSAGE>>>')
+            .replace(/\bdeep\s+tissue\b/gi, '<<<DEEP_TISSUE>>>')
+            .replace(/\bswedish\s+massage\b/gi, '<<<SWEDISH_MASSAGE>>>')
+            .replace(/\btrigger\s+point\s+therapy\b/gi, '<<<TRIGGER_POINT_THERAPY>>>')
+            .replace(/\btrigger\s+point\b/gi, '<<<TRIGGER_POINT>>>');
+        const parts = protectedLine.split(/\s*[,;]\s*|\s*[·•]\s*/).map((p) => p.trim()).filter(Boolean);
+        for (const p of parts) {
+            out.push(
+                p
+                    .replace(/<<<DEEP_TISSUE_MASSAGE>>>/g, 'Deep Tissue Massage')
+                    .replace(/<<<DEEP_TISSUE>>>/g, 'Deep Tissue')
+                    .replace(/<<<SWEDISH_MASSAGE>>>/g, 'Swedish Massage')
+                    .replace(/<<<TRIGGER_POINT_THERAPY>>>/g, 'Trigger Point Therapy')
+                    .replace(/<<<TRIGGER_POINT>>>/g, 'Trigger Point')
+            );
+        }
+    }
+    return out;
+}
+
+/** Add-ons that must not get a duration prefix (cupping, oils, etc.). */
+function calendarServiceIsAddonOnlyLine(name) {
+    const t = String(name || '').toLowerCase();
+    if (!t) return false;
+    if (/\b(?:air|fire)?\s*cupping\b/.test(t) || /\bcupping\b/.test(t)) return true;
+    if (/\bpain\s+relief\s+oil\b/.test(t) || /舒缓精油/.test(t)) return true;
+    if (/\baromatherapy\b/.test(t) || /\blavender\b/.test(t) || /\bcream\b/.test(t)) return true;
+    if (/\bcollagen\b/.test(t) || /\bsocks?\b/.test(t) || /\bgloves?\b/.test(t)) return true;
+    return false;
+}
+
+/** True if this catalog line is a 3 Senses package (keep on couple cards). */
+function calendarServiceIs3SensesLine(name) {
+    const t = String(name || '').toLowerCase();
+    if (!t) return false;
+    return /\b3\s*senses\b/.test(t) || /\bthree\s*senses\b/.test(t) || /三感/.test(t);
+}
+
+/**
+ * Couple sandwich: keep price + "3 Senses" wording when present (e.g. "$99 3 Senses").
+ */
+function calendarFormat3SensesSandwichLabel(raw) {
+    const s = String(raw || '').trim();
+    if (!s) return '';
+    const priceM = s.match(/\$\s*(\d+(?:\.\d{1,2})?)/);
+    const price = priceM ? `$${priceM[1]}` : '';
+    const label = /三感/.test(s) && !/\b3\s*senses\b/i.test(s) && !/\bthree\s*senses\b/i.test(s)
+        ? '三感'
+        : '3 Senses';
+    return price ? `${price} ${label}` : label;
+}
+
+/** Extra couple-card lines: only 3 Senses (from segments or joined service text). */
+function calendarCoupleSandwichExtraLines(serviceDisplayStr, serviceSegments) {
+    const seen = new Set();
+    const out = [];
+    const pushRaw = (raw) => {
+        if (!calendarServiceIs3SensesLine(raw)) return;
+        const line = calendarFormat3SensesSandwichLabel(raw);
+        if (!line) return;
+        const key = line.toLowerCase();
+        if (seen.has(key)) return;
+        seen.add(key);
+        out.push(line);
+    };
+    const segs = Array.isArray(serviceSegments) ? serviceSegments : [];
+    for (const seg of segs) {
+        pushRaw((seg && seg.name) || '');
+    }
+    if (!out.length) {
+        for (const part of calendarRawServiceSegmentsForSandwich(serviceDisplayStr)) {
+            pushRaw(part);
+        }
+    }
+    if (!out.length && calendarServiceIs3SensesLine(serviceDisplayStr)) {
+        pushRaw(serviceDisplayStr);
+    }
+    return out;
+}
+
+/**
+ * Prefer API service_segments (Square segment duration_minutes).
+ * Fallback: parse durations embedded in joined catalog titles.
+ */
+function calendarParsedSandwichServices(serviceDisplayStr, serviceSegments) {
+    const isDurOnly = (l) =>
+        /^(?:\d+)\s*(?:min(?:ute)?s?|分钟|分)\s*$/i.test(l) ||
+        /^\d+h(?:\s+\d+m)?\s*$/i.test(l);
+    const isCoupleLabel = (l) =>
+        /^couples?\b/i.test(l) ||
+        /^couples?\s*·/i.test(l) ||
+        /情侣/.test(l);
+
+    const fromApi = Array.isArray(serviceSegments) ? serviceSegments : [];
+    if (fromApi.length) {
+        const parsed = [];
+        for (const seg of fromApi) {
+            const rawName = String((seg && seg.name) || '').trim();
+            if (!rawName) continue;
+            const titleDur = calendarParseServiceSegmentDurationMinutes(rawName);
+            let segDur = null;
+            const apiDur = seg && seg.duration_minutes != null ? parseInt(seg.duration_minutes, 10) : NaN;
+            if (Number.isFinite(apiDur) && apiDur >= 5 && apiDur <= 240) segDur = apiDur;
+            else if (titleDur != null) segDur = titleDur;
+            let label = calendarStripDurationWordsFromServiceName(rawName);
+            label = label.replace(/^couples?\s*/i, '').replace(/情侣\s*/g, '').trim();
+            label = calendarShortenServiceNameForSandwich(uiCatalogLine(label));
+            if (!label) continue;
+            const isAddon = !!(seg && seg.is_addon) ||
+                calendarServiceIsAddonOnlyLine(label) ||
+                calendarServiceIsAddonOnlyLine(rawName);
+            parsed.push({ label, segDur, isAddon });
+        }
+        if (parsed.length) return parsed;
+    }
+
+    const segments = calendarRawServiceSegmentsForSandwich(serviceDisplayStr);
+    const parsed = [];
+    for (const seg of segments) {
+        if (isDurOnly(seg) || isCoupleLabel(seg)) continue;
+        const segDur = calendarParseServiceSegmentDurationMinutes(seg);
+        let label = calendarStripDurationWordsFromServiceName(seg);
+        label = label.replace(/^couples?\s*/i, '').replace(/情侣\s*/g, '').trim();
+        label = calendarShortenServiceNameForSandwich(label);
+        if (!label) continue;
+        parsed.push({
+            label,
+            segDur,
+            isAddon: calendarServiceIsAddonOnlyLine(label) || calendarServiceIsAddonOnlyLine(seg),
+        });
+    }
+    return parsed;
+}
+
+/**
+ * Sandwich lines with per-segment Square durations
+ * (e.g. Julie: "60 min Deep Tissue" + "30 min Trigger Point"), not the full block length on every line.
+ */
+function calendarSandwichServiceLinesWithDurationHtml(serviceDisplayStr, durStr, isCouple, serviceSegments) {
+    const couplesHead = uiT('calendar.couplesShort', 'Couples');
+    const parsed = calendarParsedSandwichServices(serviceDisplayStr, serviceSegments);
+
+    let lines;
+    if (isCouple) {
+        /* Couples card: only "{dur} Couples" + optional "$99 3 Senses" — drop massage/addon lines */
+        lines = [`${durStr} ${couplesHead}`];
+        for (const extra of calendarCoupleSandwichExtraLines(serviceDisplayStr, serviceSegments)) {
+            lines.push(extra);
+        }
+    } else if (parsed.length) {
+        const mainWithDur = parsed.filter((p) => !p.isAddon && p.segDur != null);
+        const mainWithoutDur = parsed.filter((p) => !p.isAddon && p.segDur == null);
+        /* If Square gave segment minutes for every main service, never fall back to full block length */
+        const useApiDurations = mainWithDur.length > 0 && mainWithoutDur.length === 0;
+        let fallbackPrimaryUsed = false;
+        lines = parsed.map((p) => {
+            if (p.isAddon) return p.label;
+            if (p.segDur != null) return `${p.segDur} min ${p.label}`;
+            if (useApiDurations) return p.label;
+            /* No minutes from Square: use appointment duration only once for first main service */
+            if (!fallbackPrimaryUsed) {
+                fallbackPrimaryUsed = true;
+                return `${durStr} ${p.label}`;
+            }
+            return p.label;
+        });
+    } else {
+        const fallback = calendarShortenServiceNameForSandwich(
+            calendarStripDurationWordsFromServiceName(String(serviceDisplayStr || '').replace(/\n+/g, ' '))
+        ) || '—';
+        lines = [`${durStr} ${fallback}`];
+    }
+
+    return lines
+        .map((line) => {
+            const safe = escapeHtml(line)
+                .replace(/Deep Tissue/g, 'Deep&nbsp;Tissue')
+                .replace(/Trigger Point/g, 'Trigger&nbsp;Point');
+            return `<span class="appointment-service-line">${safe}</span>`;
+        })
+        .join('');
+}
+
+/** Fixed chip style matching Jenny (requested-masseuse chips on calendar cards). */
+function masseuseRequestedChipStyleJenny() {
+    return masseuseChipInlineStyleCalendarName('Jenny');
 }
 
 /** FNV-1a 32-bit — stable hash for per-masseuse chip styling. */
@@ -8246,10 +8528,11 @@ function calendarMinimalMasseuseStackHtml(appointment, therapists) {
     const bookedBy = appointment.booked_by;
     const anyAvail = customerAnyAvailEffective(appointment);
     const oriFull = (appointment.original_therapist || '').trim();
+    const jennyChipStyle = masseuseRequestedChipStyleJenny();
     if (bookedBy === 'customer' && !anyAvail && oriFull && oriFull !== '—' && !alreadyHave(oriFull)) {
         const lab = therapistFirstNameOnly(oriFull);
         const reqM = calendarMasseuseRequestedMarkHtml(oriFull, appointment, therapists, dup, noteIdx);
-        const html = `<span class="appointment-calendar-masseuse-chip appointment-calendar-masseuse-intent" style="${masseuseChipInlineStyleCalendarName(oriFull)}" title="${escapeHtml(appointment.original_therapist)}">${escapeHtml(lab)}${reqM}</span>`;
+        const html = `<span class="appointment-calendar-masseuse-chip appointment-calendar-masseuse-intent" style="${jennyChipStyle}" title="${escapeHtml(appointment.original_therapist)}">${escapeHtml(lab)}${reqM}</span>`;
         pushChip(oriFull, html);
     }
 
@@ -8262,7 +8545,7 @@ function calendarMinimalMasseuseStackHtml(appointment, therapists) {
         if (!fk || alreadyHave(fk)) continue;
         const fn = therapistFirstNameOnly(fk);
         const reqM = calendarMasseuseRequestedMarkHtml(fk, appointment, therapists, dup, noteIdx);
-        const html = `<span class="appointment-calendar-masseuse-chip appointment-calendar-masseuse-intent" style="${masseuseChipInlineStyleCompact(fk)}" title="${escapeHtml(fk)}">${escapeHtml(fn)}${reqM}</span>`;
+        const html = `<span class="appointment-calendar-masseuse-chip appointment-calendar-masseuse-intent" style="${jennyChipStyle}" title="${escapeHtml(fk)}">${escapeHtml(fn)}${reqM}</span>`;
         pushChip(fk, html);
     }
 
@@ -9418,24 +9701,18 @@ function formatDurationMinutes(minutes) {
     if (typeof window.MOM_I18N !== 'undefined' && window.MOM_I18N.formatDurationMinutes) {
         return window.MOM_I18N.formatDurationMinutes(minutes);
     }
-    if (minutes < 60) return `${minutes} min`;
-    const h = Math.floor(minutes / 60);
-    const m = minutes % 60;
-    return m ? `${h}h ${m}m` : `${h}h`;
+    const m = Math.max(0, Math.round(Number(minutes) || 0));
+    return `${m} min`;
 }
 
-/** Couple massage card: spell out common tiers so line 2 matches Square wording (60/90/120 Minutes). */
+/** Couple massage card duration label — always total minutes (e.g. 90 min). */
 function coupleMassageDurationHeadline(minutes) {
-    const m = Math.max(0, Math.round(Number(minutes) || 0));
-    if (m === 60) return uiT('calendar.coupleDur60', '60 Minutes');
-    if (m === 90) return uiT('calendar.coupleDur90', '90 Minutes');
-    if (m === 120) return uiT('calendar.coupleDur120', '120 Minutes');
-    return formatDurationMinutes(m);
+    return formatDurationMinutes(minutes);
 }
 
 /**
- * Calendar couple cards: lead with "Couples" then duration. Square often sends duration on the first
- * line and "Couples" on the second, which gets clipped in short cells.
+ * Calendar couple cards: keep "Couples" + duration on one line when possible.
+ * Square often sends duration on the first line and "Couples" on the second.
  */
 function calendarReorderCoupleServiceHeadline(text, durationMinutes) {
     const raw = (text || '').trim();
@@ -9449,26 +9726,30 @@ function calendarReorderCoupleServiceHeadline(text, durationMinutes) {
     const coupleIdx = lines.findIndex(isCoupleLine);
     const couplesHead = uiT('calendar.couplesShort', 'Couples');
     const durLabel = coupleMassageDurationHeadline(durationMinutes);
-    if (lines.length >= 2 && durIdx >= 0 && coupleIdx >= 0 && coupleIdx > durIdx) {
+    const couplesDurSameLine = `${couplesHead} · ${durLabel}`;
+    if (lines.length >= 2 && durIdx >= 0 && coupleIdx >= 0) {
         const extra = lines.filter((_, i) => i !== durIdx && i !== coupleIdx);
         const tail = extra.join('\n');
-        return tail ? `${couplesHead}\n${durLabel}\n${tail}` : `${couplesHead}\n${durLabel}`;
+        return tail ? `${couplesDurSameLine}\n${tail}` : couplesDurSameLine;
     }
     if (lines.length === 1) {
         const one = lines[0];
         const m = one.match(/^(\d+)\s*(Minutes?|mins?|min\.?)\b/i);
         if (m && /\bcouples?\b/i.test(one)) {
-            const lc = one.toLowerCase();
-            const ic = lc.search(/\bcouples?\b/);
-            const idm = lc.indexOf(m[0].toLowerCase());
-            if (ic > idm) {
-                const tail = one
-                    .replace(m[0], ' ')
-                    .replace(/\bcouples?\b/ig, ' ')
-                    .replace(/\s+/g, ' ')
-                    .trim();
-                return tail ? `${couplesHead}\n${durLabel}\n${tail}` : `${couplesHead}\n${durLabel}`;
-            }
+            const tail = one
+                .replace(m[0], ' ')
+                .replace(/\bcouples?\b/ig, ' ')
+                .replace(/\s+/g, ' ')
+                .trim();
+            return tail ? `${couplesDurSameLine}\n${tail}` : couplesDurSameLine;
+        }
+        if (isCoupleLine(one) && !isDurLine(one) && durationMinutes > 0) {
+            const tail = one
+                .replace(/\bcouples?\b/ig, ' ')
+                .replace(/情侣/g, ' ')
+                .replace(/\s+/g, ' ')
+                .trim();
+            return tail ? `${couplesDurSameLine}\n${tail}` : couplesDurSameLine;
         }
     }
     return raw;
@@ -11360,37 +11641,14 @@ function bindCheckinCheckoutPanelDrag(panel) {
 }
 
 function openCheckinCheckoutPanels() {
-    resetCheckinCheckoutPanelPositions();
-    const dateStr = document.getElementById('dateInput')?.value;
-    const today = getTodayLocal();
-    let nextCheckin;
-    let nextCheckout;
-    if (dateStr && dateStr === today) {
-        const slot = getLocalNowCheckinCheckoutSlotValue();
-        nextCheckin = slot;
-        nextCheckout = slot;
-    } else {
-        ({ nextCheckin, nextCheckout } = getNextCheckinCheckoutTimes());
-    }
-    if (isCheckinCheckoutTimeSyncOn()) {
-        const slot = nextCheckin || nextCheckout;
-        showCheckinPanel(slot);
-        showCheckoutPanel(slot);
-    } else {
-        showCheckinPanel(nextCheckin);
-        showCheckoutPanel(nextCheckout);
-    }
-    scheduleCheckoutPopupWhenDue();
-    syncCheckinCheckoutToggleButton();
+    /* Check-In / Check-Out panels removed from UI */
+    closeCheckinCheckoutPanels();
 }
 
 /** Toolbar button: open both panels, or close both if either is already open. */
 function toggleCheckinCheckoutPanels() {
-    if (checkinCheckoutPanelsAreOpen()) {
-        closeCheckinCheckoutPanels();
-    } else {
-        openCheckinCheckoutPanels();
-    }
+    /* Check-In / Check-Out panels removed from UI */
+    closeCheckinCheckoutPanels();
 }
 
 /** True if focus is on an input/select/textarea inside the panel (not chrome buttons like close). Avoids auto-refresh wiping in-progress typing. */
@@ -11622,15 +11880,8 @@ function renderCalendar(data) {
     } catch (e) { /* ignore */ }
     grid.innerHTML = '';
 
-    let roomsSidebarCollapsed = false;
-    let capacitySidebarCollapsed = false;
-    let showQuarterSlots = false;
-    try {
-        roomsSidebarCollapsed = sessionStorage.getItem(LEFT_ROOMS_SIDEBAR_KEY) === '1';
-        capacitySidebarCollapsed = sessionStorage.getItem(LEFT_CAPACITY_SIDEBAR_KEY) === '1';
-        showQuarterSlots = sessionStorage.getItem(CALENDAR_QUARTER_SLOTS_KEY) === '1';
-    } catch (e) {}
-    const slotStepMinutes = showQuarterSlots ? TIME_SLOT_MINUTES : 30;
+    /* Left sidebars (Staff B/A, Rooms available, Appointments Available / 15-min rows) removed from UI */
+    const slotStepMinutes = 30;
 
     let columns = byRoom ? CALENDAR_ROOM_LIST : (data.therapists || []);
     let mainColumns = columns;
@@ -11659,20 +11910,16 @@ function renderCalendar(data) {
     grid.style.setProperty('--num-main-therapists', mainColumns.length);
     grid.style.setProperty('--num-right-therapists', rightSectionCollapsed ? 0 : rightColumns.length);
     grid.style.setProperty('--calendar-slot-height', getCalendarSlotHeight() + 'px');
-    const staffColW = CALENDAR_STAFF_COL_PX;
-    const roomsColW = roomsSidebarCollapsed ? CALENDAR_SIDEBAR_COLLAPSED_COL_PX : 120;
-    const capColW = capacitySidebarCollapsed ? CALENDAR_SIDEBAR_COLLAPSED_COL_PX : CALENDAR_CAPACITY_COL_PX;
-    grid.style.setProperty('--calendar-staff-col-width', staffColW + 'px');
-    grid.style.setProperty('--calendar-rooms-col-width', roomsColW + 'px');
-    grid.style.setProperty('--calendar-cap-col-width', capColW + 'px');
-    grid.style.setProperty('--calendar-time-sticky-left', (staffColW + roomsColW + capColW) + 'px');
-    grid.classList.toggle('calendar-rooms-col-collapsed', roomsSidebarCollapsed);
-    grid.classList.toggle('calendar-capacity-col-collapsed', capacitySidebarCollapsed);
+    grid.style.setProperty('--calendar-staff-col-width', '0px');
+    grid.style.setProperty('--calendar-rooms-col-width', '0px');
+    grid.style.setProperty('--calendar-cap-col-width', '0px');
+    grid.style.setProperty('--calendar-time-sticky-left', '0px');
+    grid.classList.remove('calendar-rooms-col-collapsed', 'calendar-capacity-col-collapsed');
     grid.dataset.calendarSlotStep = String(slotStepMinutes);
     if (byRoom) {
         grid.classList.remove('calendar-by-masseuse', 'calendar-has-right-section');
         grid.classList.add('calendar-by-room');
-        grid.style.setProperty('--room-superheader-row-height', '32px');
+        grid.style.setProperty('--room-superheader-row-height', '48px');
     } else {
         grid.classList.add('calendar-by-masseuse');
         grid.classList.remove('calendar-by-room');
@@ -11685,53 +11932,6 @@ function renderCalendar(data) {
         (e) => e.room !== 'ADDON'
     );
     const timeSlots = generateTimeSlots(selectedDate, slotStepMinutes);
-    const ALL_PHYSICAL_ROOMS = ['0', '1', '2', '3', '4', '5', '6'];
-
-    function getAvailableRoomsSet(slotStartMs, slotEndMs) {
-        const used = roomsPhysicallyUsedInSlotForEvents(eventsForCalendar, slotStartMs, slotEndMs);
-        const available = ALL_PHYSICAL_ROOMS.filter(r => !used.has(r));
-        if (available.includes('0') && available.includes('2')) available.push('02D');
-        return new Set(available.filter(r => r != null && String(r).trim() !== ''));
-    }
-
-    const availSets = timeSlots.map((ts) => {
-        const ss = ts.getTime();
-        const se = ss + slotStepMinutes * 60 * 1000;
-        return getAvailableRoomsSet(ss, se);
-    });
-
-    /**
-     * One tight box per room in a fixed grid; vertical merge per room when free consecutive slots (breaks at hour line).
-     */
-    function buildRoomsAvailGridHtml(slotIndex, availSet) {
-        const n = availSets.length;
-        const ts = timeSlots[slotIndex];
-        const isHourLine = slotStepMinutes === 30 ? ts.getMinutes() === 30 : ts.getMinutes() === 45;
-        const prevRowWasHourLine = slotIndex > 0 && (
-            slotStepMinutes === 30
-                ? timeSlots[slotIndex - 1].getMinutes() === 30
-                : timeSlots[slotIndex - 1].getMinutes() === 45
-        );
-        if (!availSet.size) {
-            return `<span class="rooms-avail-none-msg" title="${escapeHtml(uiT('calendar.noRoomsFree', 'No rooms free'))}">—</span>`;
-        }
-        return ROOMS_AVAILABLE_COL_ORDER.map((roomKey) => {
-            const colCls = roomKeyToColumnClass(roomKey);
-            const prevSet = slotIndex > 0 ? availSets[slotIndex - 1] : null;
-            const nextSet = slotIndex < n - 1 ? availSets[slotIndex + 1] : null;
-            /* Unavailable: blank cell (no ×) — keeps 8-column alignment */
-            if (!availSet.has(roomKey)) {
-                return `<span class="rooms-room-slot rooms-room-slot--empty" data-room="${escapeHtml(roomKey)}" aria-hidden="true"></span>`;
-            }
-            const runPrev = !!(prevSet && prevSet.has(roomKey) && !prevRowWasHourLine);
-            const runNext = !!(nextSet && nextSet.has(roomKey) && !isHourLine);
-            let runClass = 'rooms-room-slot--solo';
-            if (runPrev && runNext) runClass = 'rooms-room-slot--run-mid';
-            else if (!runPrev && runNext) runClass = 'rooms-room-slot--run-start';
-            else if (runPrev && !runNext) runClass = 'rooms-room-slot--run-end';
-            return `<span class="rooms-room-slot rooms-room-slot--avail ${runClass} ${colCls}" data-room="${escapeHtml(roomKey)}">${escapeHtml(roomKeyDisplayLabel(roomKey))}</span>`;
-        }).join('');
-    }
 
     if (byRoom) {
         appendRoomViewSuperheaderRow(grid, columns);
@@ -11740,101 +11940,7 @@ function renderCalendar(data) {
     /** Room view has a superheader row 1; masseuse view headers sit on row 1. Explicit rows avoid grid auto-placement mixing header/body rows. */
     const calendarHeaderRow = byRoom ? '2' : '1';
 
-    // Headers: Staff (busy/avail) | Rooms available | Appointments Available | Time | …
-    const staffHeader = document.createElement('div');
-    staffHeader.className = 'staff-col-header';
-    staffHeader.style.gridRow = calendarHeaderRow;
-    const stTitle = escapeHtml(uiT('calendar.staffColTitle', 'Masseuses'));
-    const stB = escapeHtml(uiT('calendar.staffBusyShort', 'Busy'));
-    const stA = escapeHtml(uiT('calendar.staffAvailShort', 'Avail'));
-    staffHeader.innerHTML =
-        '<div class="staff-col-header-inner">' +
-        `<div class="staff-col-header-title">${stTitle}</div>` +
-        `<div class="staff-col-header-sub"><span class="staff-col-b" title="${stB}">B</span><span class="staff-col-header-sep">/</span><span class="staff-col-a" title="${stA}">A</span></div>` +
-        '</div>';
-    grid.appendChild(staffHeader);
-
-    const roomsHeaderRmPrefix = uiT('calendar.rm', 'Rm');
-    const roomsToggleTitle = roomsSidebarCollapsed
-        ? uiT('calendar.expandRoomsSidebar', 'Show Rooms available column')
-        : uiT('calendar.collapseRoomsSidebar', 'Hide Rooms available column');
-    const roomsHeader = document.createElement('div');
-    roomsHeader.className = 'rooms-header';
-    roomsHeader.style.gridRow = calendarHeaderRow;
-    roomsHeader.innerHTML = `
-        <button type="button" class="calendar-sidebar-toggle calendar-sidebar-toggle--rooms" aria-expanded="${!roomsSidebarCollapsed}" title="${escapeHtml(roomsToggleTitle)}">${roomsSidebarCollapsed ? '&#9654;' : '&#9664;'}</button>
-        <div class="rooms-header-body">
-        <div class="rooms-header-title">${escapeHtml(uiT('calendar.roomsAvailable', 'Rooms'))}</div>
-        <div class="rooms-header-cols" aria-hidden="true">${ROOMS_AVAILABLE_COL_ORDER.map((k) => {
-        const disp = roomKeyDisplayLabel(k);
-        return `<span class="rooms-room-col-head ${roomKeyToColumnClass(k)}" data-room="${escapeHtml(k)}" title="${escapeHtml(roomsHeaderRmPrefix)} ${escapeHtml(disp)}">${escapeHtml(disp)}</span>`;
-    }).join('')}</div>
-        </div>
-    `;
-    const roomsToggleBtn = roomsHeader.querySelector('.calendar-sidebar-toggle--rooms');
-    if (roomsToggleBtn) {
-        roomsToggleBtn.addEventListener('click', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            try {
-                sessionStorage.setItem(LEFT_ROOMS_SIDEBAR_KEY, roomsSidebarCollapsed ? '0' : '1');
-            } catch (err) {}
-            refreshCalendarFromCachedDayData();
-        });
-    }
-    grid.appendChild(roomsHeader);
-    const capacityHeader = document.createElement('div');
-    capacityHeader.className = 'capacity-header';
-    capacityHeader.style.gridRow = calendarHeaderRow;
-    const capThBeds = escapeHtml(uiT('calendar.capacityBedsHint', 'Beds'));
-    const capThFacial = escapeHtml(uiT('calendar.capacityFacialHint', 'Facial'));
-    const capThMin = escapeHtml(uiT('calendar.apptCapMinShort', 'Min'));
-    const capThS = escapeHtml(uiT('calendar.apptCapSingle', 'Single'));
-    const capThC = escapeHtml(uiT('calendar.apptCapCouple', 'Couple'));
-    const capToggleTitle = capacitySidebarCollapsed
-        ? uiT('calendar.expandCapacitySidebar', 'Show Appointments Available column')
-        : uiT('calendar.collapseCapacitySidebar', 'Hide Appointments Available column');
-    const slotStepToggleLabel = showQuarterSlots
-        ? uiT('calendar.slotStepQuartersOff', '½ hr rows')
-        : uiT('calendar.slotStepQuartersOn', '15 min rows');
-    const slotStepToggleTitle = uiT(
-        'calendar.slotStepToggleTitle',
-        'Calendar grid: show every 15 minutes, or only each half hour (less busy).'
-    );
-    capacityHeader.innerHTML = `
-        <button type="button" class="calendar-sidebar-toggle calendar-sidebar-toggle--capacity" aria-expanded="${!capacitySidebarCollapsed}" title="${escapeHtml(capToggleTitle)}">${capacitySidebarCollapsed ? '&#9654;' : '&#9664;'}</button>
-        <div class="capacity-header-main">
-        <div class="capacity-header-title-row">
-        <div class="capacity-header-title">${escapeHtml(uiT('calendar.capacityColTitle', 'Appointments Available'))}</div>
-        <button type="button" class="capacity-slot-step-toggle" aria-pressed="${showQuarterSlots}" title="${escapeHtml(slotStepToggleTitle)}">${escapeHtml(slotStepToggleLabel)}</button>
-        </div>
-        <table class="capacity-appt-table capacity-appt-table--head" aria-hidden="true"><colgroup><col class="capacity-col-beds"><col class="capacity-col-min"><col class="capacity-col-s"><col class="capacity-col-c"><col class="capacity-col-f"></colgroup><thead><tr><th scope="col">${capThBeds}</th><th scope="col">${capThMin}</th><th scope="col">${capThS}</th><th scope="col">${capThC}</th><th scope="col">${capThFacial}</th></tr></thead></table>
-        </div>
-    `;
-    const capToggleBtn = capacityHeader.querySelector('.calendar-sidebar-toggle--capacity');
-    if (capToggleBtn) {
-        capToggleBtn.addEventListener('click', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            try {
-                sessionStorage.setItem(LEFT_CAPACITY_SIDEBAR_KEY, capacitySidebarCollapsed ? '0' : '1');
-            } catch (err) {}
-            refreshCalendarFromCachedDayData();
-        });
-    }
-    const slotStepToggleBtn = capacityHeader.querySelector('.capacity-slot-step-toggle');
-    if (slotStepToggleBtn) {
-        slotStepToggleBtn.addEventListener('click', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            try {
-                if (showQuarterSlots) sessionStorage.removeItem(CALENDAR_QUARTER_SLOTS_KEY);
-                else sessionStorage.setItem(CALENDAR_QUARTER_SLOTS_KEY, '1');
-            } catch (err) {}
-            refreshCalendarFromCachedDayData();
-        });
-    }
-    grid.appendChild(capacityHeader);
+    // Headers: Time | therapist/room columns (Staff B/A, Rooms available, Appointments Available removed)
     const headerRow = document.createElement('div');
     headerRow.className = 'time-header';
     headerRow.style.gridRow = calendarHeaderRow;
@@ -11944,68 +12050,24 @@ function renderCalendar(data) {
         });
     }
 
-    const date = document.getElementById('dateInput') && document.getElementById('dateInput').value;
-    const therapistDupFirstForCapacity = buildTherapistFirstNameDuplicates(data.therapists || []);
-
     timeSlots.forEach((timeSlot, slotIndex) => {
         const slotStart = timeSlot.getTime();
         const slotEnd = slotStart + slotStepMinutes * 60 * 1000;
+        /* :30 row bottom = thick hour line (整点); :00 row bottom = thin half-hour line */
         const isHourLine = slotStepMinutes === 30
             ? timeSlot.getMinutes() === 30
-            : timeSlot.getMinutes() === 45; /* bold line before the hour */
-        const isLastSlot = slotIndex === timeSlots.length - 1;
+            : timeSlot.getMinutes() === 45;
+        const isHalfHourLine = slotStepMinutes === 30
+            ? timeSlot.getMinutes() === 0
+            : timeSlot.getMinutes() === 15 || timeSlot.getMinutes() === 30;
+        const gridLineClass = isHourLine ? ' grid-hour-line' : (isHalfHourLine ? ' grid-half-line' : '');
         const officialHrs = calendarOfficialHoursBoundaryClass(timeSlot);
-        const curSet = availSets[slotIndex];
         const plannedStaff = getPlannedMassageStaffTodayCount();
         const busyStaff = peakMassageStaffSlotsInWindow(eventsForCalendar, slotStart, slotEnd);
         const availStaff = Math.max(0, plannedStaff - busyStaff);
         const noMassageStaffAvail = availStaff === 0;
-        const staffCell = document.createElement('div');
-        staffCell.className =
-            'staff-col-cell' +
-            (isHourLine ? ' grid-hour-line' : '') +
-            officialHrs +
-            (isLastSlot ? ' staff-col-cell--zone-bottom' : '') +
-            (noMassageStaffAvail ? ' staff-col-cell--no-staff-avail' : '');
-        staffCell.dataset.slotIndex = String(slotIndex);
-        staffCell.innerHTML =
-            '<div class="staff-col-cell-inner" title="' +
-            escapeHtml(
-                uiTParams(
-                    'calendar.staffCellTitle',
-                    { busy: String(busyStaff), avail: String(availStaff), planned: String(plannedStaff) },
-                    `${busyStaff} busy · ${availStaff} available (of ${plannedStaff} today)`
-                )
-            ) +
-            '"><span class="staff-col-b">' +
-            busyStaff +
-            '</span><span class="staff-col-sep">/</span><span class="staff-col-a">' +
-            availStaff +
-            '</span></div>';
-        grid.appendChild(staffCell);
-
-        const roomsCell = document.createElement('div');
-        roomsCell.className = 'rooms-cell' + (isHourLine ? ' grid-hour-line' : '') + officialHrs + (isLastSlot ? ' rooms-cell--zone-bottom' : '');
-        roomsCell.dataset.slotIndex = String(slotIndex);
-        roomsCell.innerHTML = curSet.size
-            ? '<div class="rooms-avail-grid">' + buildRoomsAvailGridHtml(slotIndex, curSet) + '</div>'
-            : '<div class="rooms-avail-grid rooms-avail-grid--none">' + buildRoomsAvailGridHtml(slotIndex, curSet) + '</div>';
-        grid.appendChild(roomsCell);
-        const capacityCell = document.createElement('div');
-        const minutes = timeSlot.getMinutes();
-        const capacityQuarterClass = slotStepMinutes === 15 && (minutes === 15 || minutes === 45) ? ' capacity-cell--quarter-slot' : '';
-        capacityCell.className = 'capacity-cell' + (isHourLine ? ' grid-hour-line' : '') + officialHrs + capacityQuarterClass + (isLastSlot ? ' capacity-cell--zone-bottom' : '');
-        capacityCell.dataset.slotIndex = String(slotIndex);
-        capacityCell.innerHTML = calendarCapacityCellHtml(
-            slotStart,
-            eventsForCalendar,
-            slotStepMinutes,
-            date,
-            therapistDupFirstForCapacity,
-        );
-        grid.appendChild(capacityCell);
         const timeLabel = document.createElement('div');
-        let timeSlotClasses = 'time-slot' + (isHourLine ? ' grid-hour-line' : '') + officialHrs;
+        let timeSlotClasses = 'time-slot' + gridLineClass + officialHrs;
         if (calendarSlotNoNewApptAvailability(slotStart, eventsForCalendar)) {
             const bedsFreeHere = calendarBedsFree(eventsForCalendar, slotStart, slotEnd);
             timeSlotClasses += bedsFreeHere > 0
@@ -12015,8 +12077,7 @@ function renderCalendar(data) {
         if (noMassageStaffAvail) timeSlotClasses += ' time-slot--no-staff-avail';
         timeLabel.className = timeSlotClasses;
         timeLabel.dataset.slotIndex = String(slotIndex);
-        const showLabel = slotStepMinutes === 30 || minutes === 0 || minutes === 30;
-        timeLabel.textContent = showLabel ? formatTime(timeSlot) : '';
+        timeLabel.textContent = formatTime(timeSlot);
         grid.appendChild(timeLabel);
 
         // In room view: which physical rooms 0 and 2 are in use this slot (by appt in 0, 2, or 02D)
@@ -12031,7 +12092,7 @@ function renderCalendar(data) {
         const colsToRender = byRoom ? columns : mainColumns;
         colsToRender.forEach(colKey => {
             const cell = document.createElement('div');
-            cell.className = 'appointment-cell' + (isHourLine ? ' grid-hour-line' : '') + officialHrs;
+            cell.className = 'appointment-cell' + gridLineClass + officialHrs;
             if (byRoom) {
                 cell.dataset.room = colKey;
                 cell.classList.add(roomKeyToColumnClass(colKey));
@@ -12137,13 +12198,13 @@ function renderCalendar(data) {
         });
         if (!byRoom && rightColumns.length > 0) {
             const toggleCell = document.createElement('div');
-            toggleCell.className = 'right-section-toggle-cell' + (isHourLine ? ' grid-hour-line' : '') + officialHrs;
+            toggleCell.className = 'right-section-toggle-cell' + gridLineClass + officialHrs;
             toggleCell.dataset.timeSlot = slotIndex;
             grid.appendChild(toggleCell);
             if (!rightSectionCollapsed) {
                 rightColumns.forEach(colKey => {
                     const cell = document.createElement('div');
-                    cell.className = 'appointment-cell' + (isHourLine ? ' grid-hour-line' : '') + officialHrs;
+                    cell.className = 'appointment-cell' + gridLineClass + officialHrs;
                     cell.dataset.therapist = colKey;
                     cell.dataset.timeSlot = slotIndex;
                     cell.dataset.timeSlotStart = timeSlot.getTime();
@@ -14390,7 +14451,8 @@ function createAppointmentBlock(appointment, timeSlot, _slotIndex, _allTimeSlots
             }
         }
     }
-    const newClass = isNew ? ' appointment-new' : '';
+    /* NEW badge shown top-right; do not override single/couple/facial card colors */
+    const newClass = '';
     const isUnassigned = appointment.room === 'UNASSIGNED';
     const dateStr = document.getElementById('dateInput') && document.getElementById('dateInput').value;
     const flashDismissed = dateStr ? getUnassignedFlashDismissed(dateStr).has(appointment.booking_id) : true;
@@ -14551,13 +14613,13 @@ function createAppointmentBlock(appointment, timeSlot, _slotIndex, _allTimeSlots
         : (bookedBy === 'us'
             ? `<span class="appointment-booked-by-us-group" title="${escapeHtml(byUsTitle)}"><span class="appointment-booked-by appointment-booked-by-us" aria-label="Booked by us" title="${escapeHtml(byUsTitle)}">📞</span>${byUsNamesHtml}</span>`
             : '');
-    /* Minimal: time/Rm → masseuse chips (intent only: online request + notes) → 📞 last for booked_by us */
+    /* Minimal: sandwich stack (name → service → room → requested masseuse). No time/duration sub-box. */
     const calendarMinimalMasseuseHtml = CALENDAR_CARD_MINIMAL ? calendarMinimalMasseuseStackHtml(appointment, therapists) : '';
     const calendarMasseuseUnderMetaHtml = !CALENDAR_CARD_MINIMAL ? calendarIntentMasseuseStackHtml(appointment, therapists) : '';
     const bookedByUsPhoneBottomHtml = (CALENDAR_CARD_MINIMAL && bookedBy === 'us')
         ? `<div class="appointment-calendar-us-phone-row"><span class="appointment-booked-by appointment-booked-by-us" aria-label="Booked by us" title="${escapeHtml(byUsTitle)}">📞</span></div>`
         : '';
-    const topRightMetaHtml = `<div class="appointment-calendar-top-right">
+    const topRightMetaHtml = CALENDAR_CARD_MINIMAL ? '' : `<div class="appointment-calendar-top-right">
         ${badgeLineHtml}
         ${isNew ? newBadge : ''}
         ${roomOverrideBadge}
@@ -14570,9 +14632,7 @@ function createAppointmentBlock(appointment, timeSlot, _slotIndex, _allTimeSlots
             <span class="appointment-room-compact ${roomColClass}">${escapeHtml(roomCompact)}</span>
             </div>
         </div>
-        ${calendarMinimalMasseuseHtml}
         ${calendarMasseuseUnderMetaHtml}
-        ${bookedByUsPhoneBottomHtml}
     </div>`;
     const customerShort = calendarCustomerHeadlineShort(appointment);
     const partnerFullForTitle = couplePartnerFullNameForDisplay(appointment);
@@ -14617,7 +14677,8 @@ function createAppointmentBlock(appointment, timeSlot, _slotIndex, _allTimeSlots
     const bianStoneIconHtml = appointmentBianStoneIconHtml(appointment);
     const painReliefIconHtml = appointmentPainReliefOilIconHtml(appointment);
     const facialApptLabel = escapeHtml(uiT('calendar.facialApptAria', 'Facial appointment'));
-    const facialMaskFooterHtml = isFacial
+    /* Minimal sandwich: facial icon goes top-right (compact); non-minimal keeps bottom mask */
+    const facialMaskFooterHtml = (!CALENDAR_CARD_MINIMAL && isFacial)
         ? `<div class="appointment-facial-mask-wrap" role="img" aria-label="${facialApptLabel}" title="${facialApptLabel}">${CALENDAR_FACIAL_MASK_SVG}</div>`
         : '';
     const loyaltyNameClass = isLoyaltyCustomer ? ' appointment-headline-name--loyalty' : '';
@@ -14625,8 +14686,72 @@ function createAppointmentBlock(appointment, timeSlot, _slotIndex, _allTimeSlots
         ? `<span class="appointment-headline-masseuse-row">${bookedByBadge}</span>`
         : '';
     const serviceHeadlineHtml = escapeHtml(serviceDisplayStr).replace(/\n/g, '<br>');
+    const sandwichServiceHtml = calendarSandwichServiceLinesWithDurationHtml(
+        serviceDisplayStr,
+        durStr,
+        isCouple && !appointment._roomViewSlice,
+        appointment.service_segments
+    );
+    const sandwichTimeRangeStr = formatTimeRangeNoAmPm(startTime, displayEndTime);
     const headlineMainInner = `<span class="appointment-headline-name${loyaltyNameClass}"${coupleNameTitle}>${escapeHtml(customerShort)}${occasionIconsHtml}</span><span class="appointment-headline-service${serviceClass}">${serviceHeadlineHtml}</span>${badge3S}${badgeLux}${badgeExc}${cuppingIconHtml}${bianStoneIconHtml}${painReliefIconHtml}${notesIndicatorHtml}`;
-    const headlineHtml = `<div class="appointment-headline appointment-headline--float-meta">${topRightMetaHtml}<div class="appointment-headline-main">${headlineMainInner}</div>${masseuseRowHtml}</div>`;
+    let headlineHtml;
+    if (CALENDAR_CARD_MINIMAL) {
+        const sandwichBadges = [badgeLineHtml, roomOverrideBadge, backWalkBadge]
+            .filter(Boolean)
+            .join('');
+        const sandwichBadgesHtml = sandwichBadges
+            ? `<div class="appointment-sandwich-badges">${sandwichBadges}</div>`
+            : '';
+        const sandwichFacialIconHtml = isFacial
+            ? `<span class="appointment-sandwich-facial" role="img" aria-label="${facialApptLabel}" title="${facialApptLabel}">${CALENDAR_FACIAL_MASK_SVG}</span>`
+            : '';
+        const sandwichPhoneIconHtml = (bookedBy === 'us')
+            ? `<span class="appointment-booked-by appointment-booked-by-us appointment-sandwich-phone" aria-label="Booked by us" title="${escapeHtml(byUsTitle)}">📞</span>`
+            : '';
+        /* Top-right: icon row (NEW, face, cupping, bian, 3S, phone), note icon directly below */
+        const sandwichIconsTrRowInner = [
+            isNew ? newBadge : '',
+            sandwichFacialIconHtml,
+            cuppingIconHtml,
+            bianStoneIconHtml,
+            badge3S,
+            sandwichPhoneIconHtml,
+        ].filter(Boolean).join('');
+        const sandwichIconsTrHtml = (sandwichIconsTrRowInner || notesIndicatorHtml)
+            ? (
+                `<div class="appointment-sandwich-icons-tr">` +
+                (sandwichIconsTrRowInner
+                    ? `<div class="appointment-sandwich-icons-tr-row">${sandwichIconsTrRowInner}</div>`
+                    : '') +
+                (notesIndicatorHtml
+                    ? `<div class="appointment-sandwich-notes-below">${notesIndicatorHtml}</div>`
+                    : '') +
+                `</div>`
+            )
+            : '';
+        /* name + start–end (same line/font) → (duration + service) lines → requested masseuse → Rm */
+        const sandwichNameTimeHtml =
+            `<span class="appointment-headline-name appointment-sandwich-name-time${loyaltyNameClass}"${coupleNameTitle}>` +
+            `<span class="appointment-sandwich-customer">${escapeHtml(customerShort)}</span>` +
+            `<span class="appointment-sandwich-name-time-sep">   </span>` +
+            `<span class="appointment-sandwich-time-inline" title="${escapeHtml(sandwichTimeRangeStr)}">${escapeHtml(sandwichTimeRangeStr)}</span>` +
+            `${occasionIconsHtml}` +
+            `</span>`;
+        const sandwichRoomHtml =
+            `<div class="appointment-sandwich-room appointment-room-compact ${roomColClass}" title="${escapeHtml(roomCompact)}">${escapeHtml(roomCompact)}</div>`;
+        headlineHtml =
+            `<div class="appointment-headline appointment-headline--sandwich${sandwichIconsTrHtml ? ' appointment-headline--sandwich-has-icons' : ''}">` +
+            sandwichIconsTrHtml +
+            sandwichBadgesHtml +
+            sandwichNameTimeHtml +
+            `<span class="appointment-headline-service${serviceClass}">${sandwichServiceHtml}</span>` +
+            `${badgeLux}${badgeExc}${painReliefIconHtml}` +
+            calendarMinimalMasseuseHtml +
+            sandwichRoomHtml +
+            `</div>`;
+    } else {
+        headlineHtml = `<div class="appointment-headline appointment-headline--float-meta">${topRightMetaHtml}<div class="appointment-headline-main">${headlineMainInner}</div>${masseuseRowHtml}</div>`;
+    }
     const customerServiceRows = '';
     const roomWrapHtml = `<span class="room-wrap" title="${escapeHtml(lockTitle)}">
                 <span class="room-lock">${roomLocked ? '🔒' : '🔓'}</span>
@@ -14718,8 +14843,14 @@ function createAppointmentBlock(appointment, timeSlot, _slotIndex, _allTimeSlots
         ${isPast && !appointment.appointment_locked ? '<button type="button" class="unlock-past-btn">' + escapeHtml(uiT('modal.unlockPast', 'Unlock to edit')) + '</button>' : ''}${facialMaskFooterHtml}`;
     if (CALENDAR_CARD_MINIMAL) block.classList.add('appointment-block-minimal');
     else block.classList.remove('appointment-block-minimal');
-    if (isFacial) block.classList.add('appointment-has-facial-mask');
-    else block.classList.remove('appointment-has-facial-mask');
+    if (isFacial) {
+        block.classList.add('appointment-facial');
+        /* Bottom facial mask padding only for non-minimal cards */
+        if (CALENDAR_CARD_MINIMAL) block.classList.remove('appointment-has-facial-mask');
+        else block.classList.add('appointment-has-facial-mask');
+    } else {
+        block.classList.remove('appointment-has-facial-mask', 'appointment-facial');
+    }
 
     const notesIndicator = block.querySelector('.appointment-notes-indicator');
     if (notesIndicator && notesText) {
@@ -15257,7 +15388,7 @@ function createAppointmentBlock(appointment, timeSlot, _slotIndex, _allTimeSlots
         });
     })(roomElement, appointment);
     }
-    
+
     return block;
 }
 

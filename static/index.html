@@ -6,7 +6,7 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="theme-color" content="#007bff">
     <title>Spa Room Management Dashboard</title>
-    <link rel="stylesheet" href="/static/style.css?v=163">
+    <link rel="stylesheet" href="/static/style.css?v=167">
 </head>
 <body>
     <div class="container">
@@ -56,7 +56,8 @@
                             </select>
                         </div>
                     </div>
-                    <button type="button" id="checkinCheckoutBtn" class="checkin-checkout-btn" data-i18n-title="btn.checkinCheckoutTitle" title="Show or hide check-in and checkout panels" aria-expanded="false" aria-controls="checkinPanel checkoutPanel">
+                    <!-- Check-In / Check-Out top control removed from UI (panels kept in DOM for JS safety) -->
+                    <button type="button" id="checkinCheckoutBtn" class="checkin-checkout-btn" hidden aria-hidden="true" tabindex="-1" aria-expanded="false" aria-controls="checkinPanel checkoutPanel" style="display: none !important;">
                         <span class="checkin-checkout-label checkin-checkout-label--desktop" data-i18n-html="btn.checkinCheckout">Check-In<br>Check-Out</span>
                         <span class="checkin-checkout-label checkin-checkout-label--mobile" data-i18n-html="btn.checkinCheckout">Check-In<br>Check-Out</span>
                     </button>
@@ -80,10 +81,11 @@
                             </span>
                         </div>
                     </div>
-                    <span class="header-daylist-btns">
-                        <button type="button" id="todayAppointmentsListBtn" class="today-appointments-btn" data-i18n="btn.todayAppointments" data-i18n-title="btn.todayAppointmentsTitle" title="View and export the selected day’s appointments">Day list</button>
+                    <!-- Day list / lock-from-time removed from UI (DOM kept for JS) -->
+                    <span class="header-daylist-btns" hidden aria-hidden="true">
+                        <button type="button" id="todayAppointmentsListBtn" class="today-appointments-btn" data-i18n="btn.todayAppointments" data-i18n-title="btn.todayAppointmentsTitle" title="View and export the selected day’s appointments" tabindex="-1">Day list</button>
                         <span class="header-day-lock-stack">
-                            <button type="button" id="dayLayoutLockFromTimeBtn" class="header-day-lock-from-time-btn" data-i18n="dayLayout.lockFromTime" data-i18n-title="dayLayout.lockFromTimeTitle" title="Lock only appointments starting at or after a time (leave earlier auto-assignments unpinned)">Lock from a time…</button>
+                            <button type="button" id="dayLayoutLockFromTimeBtn" class="header-day-lock-from-time-btn" data-i18n="dayLayout.lockFromTime" data-i18n-title="dayLayout.lockFromTimeTitle" title="Lock only appointments starting at or after a time (leave earlier auto-assignments unpinned)" tabindex="-1">Lock from a time…</button>
                         </span>
                         <button type="button" id="newAppointmentsListBtn" class="today-appointments-btn today-appointments-btn--secondary" hidden data-i18n="btn.newAppointments" data-i18n-title="btn.newAppointmentsTitle" title="Recently booked Square appointments">New Appointments</button>
                     </span>
@@ -91,42 +93,19 @@
                         <button type="button" id="historySquareResyncBtn" class="history-square-resync-btn" onclick="historySquareResyncFromSquare()"></button>
                     </div>
                 </div>
-                <div class="top-bar-row top-bar-row-summaries">
-                    <details id="momPhoneSummariesDetails" class="mom-phone-summaries-details" open>
-                        <summary class="mom-phone-summaries-summary">
-                            <span class="mom-phone-summaries-summary-sr" data-i18n="summaries.phoneFoldSr">Requested therapist list and facial schedule</span>
-                            <span class="mom-phone-summaries-summary-label" data-i18n="summaries.phoneFoldLabel">Requested therapist · Facials</span>
-                            <span class="mom-phone-summaries-chevron" aria-hidden="true">▼</span>
-                        </summary>
-                        <div class="mom-phone-summaries-body-inner">
-                            <div id="customerRequestsPanel" class="customer-requests-panel" style="display: none;">
-                                <div class="customer-requests-panel-inner">
-                                    <button type="button" id="customerRequestsToggle" class="customer-requests-toggle" aria-expanded="true" aria-controls="customerRequestsBar" title="Hide requested therapist list">
-                                        <span class="customer-requests-toggle-icon" aria-hidden="true">▼</span>
-                                    </button>
-                                    <div id="customerRequestsBar" class="customer-requests-bar"></div>
-                                </div>
-                            </div>
-                            <div id="facialSummaryBar" class="facial-summary-bar facial-summary-box" style="display: none;"></div>
-                            <div id="nextAvailable" class="next-available next-available--inline next-room-availability-box" style="display: none;"></div>
-                            <div id="therapistOrderBar" class="therapist-order-bar" style="display: none;"></div>
-                        </div>
-                    </details>
-                </div>
                 <div class="controls">
-                    <button type="button" id="squareOriHintToggle" class="square-ori-hint-toggle" data-i18n="btn.squareOriHint" data-i18n-title="btn.squareOriHintTitle" aria-pressed="false" title="Show Square-booked masseuse (first 3 letters) as a light watermark on each appointment card">ORI</button>
-                    <label id="dayLayoutFreezeWrap" class="day-layout-freeze-icon-btn header-day-layout-freeze" data-i18n-title="dayLayout.freezeLabel">
-                        <input type="checkbox" id="dayLayoutFreezeCb" data-i18n-aria="dayLayout.freezeAria" aria-label="Lock appointments for the day" />
+                    <!-- ORI / lock / EN removed from UI (DOM kept for JS) -->
+                    <button type="button" id="squareOriHintToggle" class="square-ori-hint-toggle" hidden aria-hidden="true" tabindex="-1" data-i18n="btn.squareOriHint" data-i18n-title="btn.squareOriHintTitle" aria-pressed="false" title="Show Square-booked masseuse (first 3 letters) as a light watermark on each appointment card">ORI</button>
+                    <label id="dayLayoutFreezeWrap" class="day-layout-freeze-icon-btn header-day-layout-freeze" hidden aria-hidden="true" data-i18n-title="dayLayout.freezeLabel">
+                        <input type="checkbox" id="dayLayoutFreezeCb" data-i18n-aria="dayLayout.freezeAria" aria-label="Lock appointments for the day" tabindex="-1" />
                         <span class="day-layout-freeze-icon" aria-hidden="true">🔒</span>
                     </label>
-                    <button id="loadBtn" onclick="loadDay()" data-i18n="btn.load">Load</button>
-                    <button id="refreshBtn" onclick="refreshDay()" data-i18n="btn.refresh">Refresh</button>
                     <div class="view-toggle-with-phone-peek">
                         <button type="button" id="viewToggleBtn" class="view-toggle-combined" data-i18n-title="view.toggleTitle" title="Toggle calendar view">
                             <span class="view-toggle-line view-toggle-room" data-i18n="view.byRoom">By Room</span>
                             <span class="view-toggle-line view-toggle-masseuse" data-i18n="view.byMasseuse">By Masseuse</span>
                         </button>
-                        <details id="desktopPhonePeekDetails" class="desktop-phone-peek-details">
+                        <details id="desktopPhonePeekDetails" class="desktop-phone-peek-details" hidden aria-hidden="true">
                             <summary class="desktop-phone-peek-summary" data-i18n="desktopPhonePeek.summary" data-i18n-title="desktopPhonePeek.summaryTitle" title="Open the same narrow list or checkout in a movable window">Mobile List</summary>
                             <div class="desktop-phone-peek-menu" role="group" data-i18n-aria="desktopPhonePeek.menuAria" aria-label="Open mobile-style list or checkout">
                                 <button type="button" class="desktop-phone-peek-item" id="desktopPhonePeekOpenList" data-i18n="phoneCal.list">Mobile List</button>
@@ -134,30 +113,30 @@
                             </div>
                         </details>
                     </div>
-                    <span class="controls-trailing-cluster">
-                        <span class="lang-toggle-slot">
-                            <button type="button" id="langToggleBtn" class="lang-toggle-btn" title="Language" aria-label="Language">EN</button>
+                    <button type="button" class="lan-share-open-btn" id="lanShareOpenBtn" data-i18n="lanShare.menuBtn" data-i18n-title="lanShare.menuTitle" title="Show a QR code and link to open this dashboard on another device on the same Wi‑Fi">Phone / tablet link</button>
+                    <a href="/static/masseuse_scheduling_sheet.html" class="mss-sheet-open-btn" id="masseuseSchedulingSheetLink" target="_blank" rel="noopener" title="Open masseuse scheduling sheet (turn order + NM / RM / Price / Tip / Note)">Scheduling sheet</a>
+                    <span class="controls-trailing-cluster" hidden aria-hidden="true">
+                        <span class="lang-toggle-slot" hidden aria-hidden="true">
+                            <button type="button" id="langToggleBtn" class="lang-toggle-btn" title="Language" aria-label="Language" tabindex="-1">EN</button>
                         </span>
                         <div class="header-toolbar-links">
-                            <button type="button" id="headerToolbarLinksToggle" class="header-toolbar-links-toggle" aria-expanded="true" aria-controls="headerToolbarLinksPanel" title="Hide report links and API status" aria-label="Hide report links and API status">
+                            <button type="button" id="headerToolbarLinksToggle" class="header-toolbar-links-toggle" hidden aria-hidden="true" tabindex="-1" aria-expanded="true" aria-controls="headerToolbarLinksPanel" title="Hide report links and API status" aria-label="Hide report links and API status">
                                 <span class="header-toolbar-links-toggle-icon" aria-hidden="true">▼</span>
                             </button>
                             <div id="headerToolbarLinksPanel" class="header-toolbar-links-panel">
-                                <button type="button" class="reports-link reports-link--button header-toolbar-menu-daylist" id="todayAppointmentsMenuBtn" data-i18n="btn.todayAppointments" data-i18n-title="btn.todayAppointmentsTitle" title="View and export the selected day’s appointments">Day list</button>
+                                <button type="button" class="reports-link reports-link--button header-toolbar-menu-daylist" id="todayAppointmentsMenuBtn" hidden aria-hidden="true" tabindex="-1" data-i18n="btn.todayAppointments" data-i18n-title="btn.todayAppointmentsTitle" title="View and export the selected day’s appointments">Day list</button>
                                 <button type="button" class="reports-link reports-link--button" id="undoRoomMenuBtn" style="display: none;" data-i18n="btn.undoRoom" data-i18n-title="btn.undoRoomTitle" title="Undo last room change for this day" onclick="undoRoomChange()">Undo room change</button>
-                                <a href="/static/reports.html" class="reports-link" target="_blank" data-i18n="link.masseuseReport">Masseuse report</a>
-                                <a href="/static/customers_hours_report.html" class="reports-link" target="_blank" data-i18n="link.customersHoursReport">Customers & hours</a>
-                                <a href="/static/services_report.html" class="reports-link" target="_blank" data-i18n="link.serviceSummary">Service summary</a>
-                                <a href="/static/grid.html" target="_blank" rel="noopener" class="reports-link" id="dailyGridBtn" data-i18n="link.dailyGrid" data-i18n-title="link.dailyGridTitle" title="Open daily grid sheet by masseuse (3×3)" onclick="openDailyGrid(event)">Daily grid</a>
-                                <a href="/static/services.html" class="reports-link" target="_blank" data-i18n="link.servicesPay">Services & Pay</a>
-                                <a href="/static/checkin.html" class="reports-link" target="_blank" data-i18n="link.checkinKiosk" data-i18n-title="link.checkinKioskTitle" title="Customer check-in kiosk">Check-in</a>
-                                <a href="/static/glossary_en_zh.html" class="reports-link" target="_blank" rel="noopener" data-i18n="link.glossary" data-i18n-title="link.glossaryTitle" title="English–Chinese terms used on dashboard, check-in, and massage menu text">EN ↔ 中文 glossary</a>
-                                <button type="button" class="reports-link reports-link--button" id="availabilityAuditBtn" data-i18n="link.availabilityAudit" data-i18n-title="link.availabilityAuditTitle" title="Compare Square online slots to physical rooms for the selected day">Square vs rooms</button>
-                                <button type="button" class="lan-share-open-btn" id="lanShareOpenBtn" data-i18n="lanShare.menuBtn" data-i18n-title="lanShare.menuTitle" title="Show a QR code and link to open this dashboard on another device on the same Wi‑Fi">Phone / tablet link</button>
-                                <div id="apiStatus" class="api-status"></div>
+                                <button type="button" class="reports-link reports-link--button" id="availabilityAuditBtn" hidden aria-hidden="true" tabindex="-1" data-i18n="link.availabilityAudit" data-i18n-title="link.availabilityAuditTitle" title="Compare Square online slots to physical rooms for the selected day">Square vs rooms</button>
                             </div>
                         </div>
                     </span>
+                    <div class="header-top-right-stack">
+                        <div id="apiStatus" class="api-status"></div>
+                        <div class="header-load-refresh-stack">
+                            <button id="loadBtn" onclick="loadDay()" data-i18n="btn.load">Load</button>
+                            <button id="refreshBtn" onclick="refreshDay()" data-i18n="btn.refresh">Refresh</button>
+                        </div>
+                    </div>
                 </div>
                 <div id="phoneCalendarViewBar" class="phone-calendar-view-bar" hidden>
                     <div class="phone-calendar-view-toggle" role="group" data-i18n-aria="phoneCal.toggleAria" aria-label="Mobile calendar layout">
@@ -168,6 +147,61 @@
                 </div>
             </div>
         </header>
+
+        <div id="loading" class="loading" style="display: none;">
+            <span data-i18n="loading">Loading...</span>
+            <div id="loadingDateDetail" class="loading-date-detail" hidden></div>
+        </div>
+
+        <!-- Calendar first; requested therapist + messages below -->
+        <div id="calendarContainer" class="calendar-container" style="display: none;">
+            <div id="calendarFullscreenBar" class="calendar-fullscreen-bar" aria-hidden="true">
+                <span id="calendarFullscreenDateLabel" class="calendar-fullscreen-date"></span>
+                <button type="button" id="calendarExitFullscreenBtn" class="calendar-exit-fullscreen-btn" data-i18n-title="calendar.exitFullscreenTitle" data-i18n-aria="calendar.exitFullscreenAria" title="Exit full screen (Esc)" aria-label="Exit full screen">×</button>
+            </div>
+            <div id="calendarScrollViewport" class="calendar-scroll-viewport">
+                <div id="calendarZoomBar" class="calendar-zoom-bar">
+                    <span class="calendar-zoom-label" data-i18n="zoom.label">Zoom:</span>
+                    <button type="button" id="calendarZoomOut" class="calendar-zoom-btn" data-i18n-title="zoom.outTitle" title="Zoom out (see more)">−</button>
+                    <span id="calendarZoomValue" class="calendar-zoom-value">100%</span>
+                    <button type="button" id="calendarZoomIn" class="calendar-zoom-btn" data-i18n-title="zoom.inTitle" title="Zoom in">+</button>
+                    <span class="calendar-zoom-spacer" aria-hidden="true"></span>
+                    <button type="button" id="undoRoomBtn" class="calendar-toolbar-action calendar-toolbar-action--undo" style="display: none;" data-i18n="btn.undoRoom" data-i18n-title="btn.undoRoomTitle" title="Undo last room change for this day" onclick="undoRoomChange()">Undo room change</button>
+                    <button type="button" id="calendarScreenshotBtn" class="calendar-toolbar-action calendar-toolbar-action--muted" data-i18n="calendarScreenshot.capture" data-i18n-title="calendarScreenshot.captureTitle" title="Save a picture of the whole calendar for the day shown in the date picker">Screenshot day</button>
+                    <button type="button" id="calendarScreenshotsGalleryBtn" class="calendar-toolbar-action calendar-toolbar-action--muted" data-i18n="calendarScreenshot.gallery" data-i18n-title="calendarScreenshot.galleryTitle" title="View saved calendar screenshots">Screenshots</button>
+                    <button type="button" id="calendarEnterFullscreenBtn" class="calendar-toolbar-action calendar-toolbar-action--fullscreen" data-i18n="calendar.enterFullscreen" data-i18n-title="calendar.enterFullscreenTitle" title="Use the whole screen for the calendar">Full screen</button>
+                    <a href="/static/checkin.html" class="calendar-toolbar-action calendar-toolbar-action--checkin" id="calendarCheckinLink" target="_blank" data-i18n="link.checkinKiosk" data-i18n-title="link.checkinKioskTitle" title="Customer check-in kiosk">Check-in</a>
+                </div>
+                <div id="phoneCalendarListWrap" class="phone-calendar-list-wrap" hidden></div>
+                <div id="calendarGridScrollRegion" class="calendar-grid-scroll-region">
+                    <div id="calendarGrid" class="calendar-grid"></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="top-bar-row top-bar-row-summaries top-bar-row-summaries--below-calendar">
+            <details id="momPhoneSummariesDetails" class="mom-phone-summaries-details" open>
+                <summary class="mom-phone-summaries-summary">
+                    <span class="mom-phone-summaries-summary-sr" data-i18n="summaries.phoneFoldSr">Requested therapist list and facial schedule</span>
+                    <span class="mom-phone-summaries-summary-label" data-i18n="summaries.phoneFoldLabel">Requested therapist · Facials</span>
+                    <span class="mom-phone-summaries-chevron" aria-hidden="true">▼</span>
+                </summary>
+                <div class="mom-phone-summaries-body-inner">
+                    <div id="customerRequestsPanel" class="customer-requests-panel" style="display: none;">
+                        <div class="customer-requests-panel-inner">
+                            <button type="button" id="customerRequestsToggle" class="customer-requests-toggle" aria-expanded="true" aria-controls="customerRequestsBar" title="Hide requested therapist list">
+                                <span class="customer-requests-toggle-icon" aria-hidden="true">▼</span>
+                            </button>
+                            <div id="customerRequestsBar" class="customer-requests-bar"></div>
+                        </div>
+                    </div>
+                    <div id="facialSummaryBar" class="facial-summary-bar facial-summary-box" style="display: none;"></div>
+                    <div id="nextAvailable" class="next-available next-available--inline next-room-availability-box" style="display: none;"></div>
+                    <div id="therapistOrderBar" class="therapist-order-bar" style="display: none;"></div>
+                </div>
+            </details>
+        </div>
+
         <div id="errorMessage" class="error-message" style="display: none;"></div>
         <div id="noBookingsMessage" class="no-bookings-message" style="display: none;"></div>
         <div id="noRoomsAlertContainer" class="no-rooms-alert no-rooms-alert-collapsed" style="display: none;">
@@ -193,35 +227,6 @@
         </div>
         <div id="cancelledAlertsContainer" class="cancelled-alerts-container" style="display: none;"></div>
         <div id="rescheduleAlertsContainer" class="reschedule-alerts-container" style="display: none;"></div>
-
-        <div id="loading" class="loading" style="display: none;">
-            <span data-i18n="loading">Loading...</span>
-            <div id="loadingDateDetail" class="loading-date-detail" hidden></div>
-        </div>
-
-        <div id="calendarContainer" class="calendar-container" style="display: none;">
-            <div id="calendarFullscreenBar" class="calendar-fullscreen-bar" aria-hidden="true">
-                <span id="calendarFullscreenDateLabel" class="calendar-fullscreen-date"></span>
-                <button type="button" id="calendarExitFullscreenBtn" class="calendar-exit-fullscreen-btn" data-i18n-title="calendar.exitFullscreenTitle" data-i18n-aria="calendar.exitFullscreenAria" title="Exit full screen (Esc)" aria-label="Exit full screen">×</button>
-            </div>
-            <div id="calendarScrollViewport" class="calendar-scroll-viewport">
-                <div id="calendarZoomBar" class="calendar-zoom-bar">
-                    <span class="calendar-zoom-label" data-i18n="zoom.label">Zoom:</span>
-                    <button type="button" id="calendarZoomOut" class="calendar-zoom-btn" data-i18n-title="zoom.outTitle" title="Zoom out (see more)">−</button>
-                    <span id="calendarZoomValue" class="calendar-zoom-value">100%</span>
-                    <button type="button" id="calendarZoomIn" class="calendar-zoom-btn" data-i18n-title="zoom.inTitle" title="Zoom in">+</button>
-                    <span class="calendar-zoom-spacer" aria-hidden="true"></span>
-                    <button type="button" id="undoRoomBtn" class="calendar-toolbar-action calendar-toolbar-action--undo" style="display: none;" data-i18n="btn.undoRoom" data-i18n-title="btn.undoRoomTitle" title="Undo last room change for this day" onclick="undoRoomChange()">Undo room change</button>
-                    <button type="button" id="calendarScreenshotBtn" class="calendar-toolbar-action calendar-toolbar-action--muted" data-i18n="calendarScreenshot.capture" data-i18n-title="calendarScreenshot.captureTitle" title="Save a picture of the whole calendar for the day shown in the date picker">Screenshot day</button>
-                    <button type="button" id="calendarScreenshotsGalleryBtn" class="calendar-toolbar-action calendar-toolbar-action--muted" data-i18n="calendarScreenshot.gallery" data-i18n-title="calendarScreenshot.galleryTitle" title="View saved calendar screenshots">Screenshots</button>
-                    <button type="button" id="calendarEnterFullscreenBtn" class="calendar-toolbar-action calendar-toolbar-action--fullscreen" data-i18n="calendar.enterFullscreen" data-i18n-title="calendar.enterFullscreenTitle" title="Use the whole screen for the calendar">Full screen</button>
-                </div>
-                <div id="phoneCalendarListWrap" class="phone-calendar-list-wrap" hidden></div>
-                <div id="calendarGridScrollRegion" class="calendar-grid-scroll-region">
-                    <div id="calendarGrid" class="calendar-grid"></div>
-                </div>
-            </div>
-        </div>
 
         <div id="unassignedContainer" class="unassigned-container" style="display: none;">
             <h2 data-i18n="unassigned.title">⚠️ Unassigned Bookings</h2>
@@ -617,6 +622,6 @@
 
     <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
     <script src="/static/i18n.js?v=65"></script>
-    <script src="/static/app.js?v=170"></script>
+    <script src="/static/app.js?v=176"></script>
 </body>
 </html>

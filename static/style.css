@@ -632,48 +632,11 @@ body {
     overflow: visible;
 }
 
-/* Electric surge: rotating conic bands + soft outer glow */
+/* Logo beam/orbit disabled — plain logo only */
 .header-logo-wrap::before,
 .header-logo-wrap::after {
-    content: '';
-    position: absolute;
-    inset: 0;
-    border-radius: inherit;
-    z-index: 0;
-    pointer-events: none;
-    background: conic-gradient(
-        from 0deg,
-        transparent 0deg,
-        transparent 72deg,
-        rgba(0, 180, 255, 0.25) 78deg,
-        rgba(120, 220, 255, 0.85) 84deg,
-        rgba(255, 255, 255, 0.95) 87deg,
-        rgba(0, 240, 255, 1) 89deg,
-        rgba(0, 140, 255, 0.7) 92deg,
-        rgba(0, 200, 255, 0.35) 98deg,
-        transparent 104deg,
-        transparent 168deg,
-        rgba(0, 160, 255, 0.2) 174deg,
-        rgba(255, 255, 255, 0.75) 178deg,
-        rgba(0, 220, 255, 0.9) 181deg,
-        transparent 188deg,
-        transparent 360deg
-    );
-}
-
-.header-logo-wrap::before {
-    filter: blur(3px);
-    opacity: 0.9;
-    animation: logo-electric-orbit-soft 2.4s linear infinite;
-}
-
-.header-logo-wrap::after {
-    filter: blur(0.5px);
-    opacity: 0.85;
-    mix-blend-mode: screen;
-    animation:
-        logo-electric-orbit 2.4s linear infinite,
-        logo-electric-flicker 0.28s steps(2, end) infinite;
+    content: none;
+    display: none;
 }
 
 .header-logo-inner {
@@ -686,47 +649,6 @@ body {
     border-radius: 7px;
     border: 1px solid #e8ecf0;
     line-height: 0;
-}
-
-@keyframes logo-electric-orbit {
-    from {
-        transform: rotate(0deg);
-    }
-    to {
-        transform: rotate(360deg);
-    }
-}
-
-@keyframes logo-electric-orbit-soft {
-    from {
-        transform: rotate(0deg) scale(1.06);
-    }
-    to {
-        transform: rotate(360deg) scale(1.06);
-    }
-}
-
-@keyframes logo-electric-flicker {
-    0%, 45%, 100% {
-        opacity: 0.85;
-    }
-    50% {
-        opacity: 1;
-    }
-    52% {
-        opacity: 0.55;
-    }
-    54% {
-        opacity: 0.95;
-    }
-}
-
-@media (prefers-reduced-motion: reduce) {
-    .header-logo-wrap::before,
-    .header-logo-wrap::after {
-        animation: none;
-        opacity: 0.35;
-    }
 }
 
 .header-brand-logo {
@@ -1162,6 +1084,71 @@ body {
     display: flex;
     gap: 6px;
     align-items: center;
+}
+
+/* API status + Load/Refresh at far top-right */
+.header-top-right-stack {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: flex-end;
+    justify-content: flex-start;
+    gap: 3px;
+    flex-shrink: 0;
+    margin-left: auto;
+    order: 99;
+}
+.header-top-right-stack .api-status {
+    margin: 0;
+    text-align: right;
+    white-space: nowrap;
+    font-size: 11px;
+    line-height: 1.2;
+    max-width: 14rem;
+}
+.header-load-refresh-stack {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: flex-start;
+    gap: 3px;
+    flex-shrink: 0;
+}
+.header-load-refresh-stack #loadBtn,
+.header-load-refresh-stack #refreshBtn {
+    margin: 0;
+    width: 100%;
+    min-width: 4.5rem;
+    padding: 4px 10px;
+    line-height: 1.2;
+    white-space: nowrap;
+}
+
+/* Hidden from header UI (DOM kept for JS): Day list, ORI, lock, EN, ▼, Square vs rooms */
+.header-daylist-btns[hidden],
+#squareOriHintToggle[hidden],
+#dayLayoutFreezeWrap[hidden],
+.lang-toggle-slot[hidden],
+.controls-trailing-cluster[hidden],
+#todayAppointmentsMenuBtn[hidden],
+#headerToolbarLinksToggle[hidden],
+#availabilityAuditBtn[hidden] {
+    display: none !important;
+}
+
+/* Check-in sits on the calendar toolbar, top-right */
+.calendar-zoom-bar .calendar-toolbar-action--checkin {
+    margin-left: 4px;
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: #0d6efd;
+    color: #fff !important;
+    border: 1px solid #0b5ed7;
+}
+.calendar-zoom-bar .calendar-toolbar-action--checkin:hover {
+    background: #0b5ed7;
+    color: #fff !important;
 }
 
 /* EN + report-links toggle stay paired in .controls-trailing-cluster */
@@ -1872,26 +1859,48 @@ table.availability-audit-table tbody tr:nth-child(even) {
     font-size: 11px;
     line-height: 1.35;
 }
+.controls > .lan-share-open-btn,
+.controls > .mss-sheet-open-btn,
 .header-toolbar-links-panel .lan-share-open-btn {
-    margin-left: 0;
+    margin: 0;
+    box-sizing: border-box;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 4px 10px;
+    font-size: 12px;
+    line-height: 1.25;
+    font-family: inherit;
+    cursor: pointer;
+    border-radius: 4px;
+    border: 1px solid #0d6efd;
+    background: #e7f1ff;
+    color: #084298;
+    white-space: nowrap;
+    text-decoration: none;
+}
+.controls > .mss-sheet-open-btn {
+    border-color: #198754;
+    background: #e8f5e9;
+    color: #0f5132;
+}
+.controls > .mss-sheet-open-btn:hover {
+    background: #d1e7dd;
+    color: #0a3622;
+}
+.controls > .lan-share-open-btn:hover,
+.header-toolbar-links-panel .lan-share-open-btn:hover {
+    background: #cfe2ff;
+    color: #052c65;
+}
+.header-toolbar-links-panel .lan-share-open-btn {
     margin-top: 6px;
     width: 100%;
-    box-sizing: border-box;
     text-align: left;
     display: block;
     padding: 6px 10px;
     font-size: 13px;
-    line-height: 1.25;
-    font-family: inherit;
-    cursor: pointer;
     border-radius: 6px;
-    border: 1px solid #0d6efd;
-    background: #e7f1ff;
-    color: #084298;
-}
-.header-toolbar-links-panel .lan-share-open-btn:hover {
-    background: #cfe2ff;
-    color: #052c65;
 }
 .controls button.header-toolbar-links-toggle {
     padding: 4px 8px;
@@ -3035,6 +3044,14 @@ table.availability-audit-table tbody tr:nth-child(even) {
 }
 .lang-toggle-btn.lang-mode-both:hover {
     filter: brightness(1.03);
+}
+
+/* Check-in / Checkout UI removed from dashboard (panels/button kept in DOM for JS) */
+#checkinCheckoutBtn,
+#checkinPanel,
+#checkoutPanel,
+.checkin-checkout-panel {
+    display: none !important;
 }
 
 /* Check-in / Checkout side panels */
@@ -4951,18 +4968,18 @@ button.checkin-checkout-btn:active {
 .calendar-grid {
     display: grid;
     position: relative; /* so grid children resolve offsetTop vs grid; avoids wrong current-time Y when offsetParent chains past the grid */
-    /* Staff + Rooms + Appts/capacity + Time (80px) + therapists — sidebar widths set in JS */
-    grid-template-columns: var(--calendar-staff-col-width, 52px) var(--calendar-rooms-col-width, 120px) var(--calendar-cap-col-width, 168px) 80px repeat(var(--num-therapists), 1fr);
+    /* Time (80px) + therapists — left Staff/Rooms/Capacity sidebars removed */
+    grid-template-columns: 80px repeat(var(--num-therapists), 1fr);
     grid-auto-flow: row;
     gap: 1px;
     background: #fff;
     border: 1px solid #dee2e6;
-    min-width: 1020px;
-    --calendar-slot-height: 30px;
-    --calendar-staff-col-width: 52px;
-    --calendar-rooms-col-width: 120px;
-    --calendar-cap-col-width: 168px;
-    --calendar-time-sticky-left: 340px;
+    min-width: 700px;
+    --calendar-slot-height: 44px;
+    --calendar-staff-col-width: 0px;
+    --calendar-rooms-col-width: 0px;
+    --calendar-cap-col-width: 0px;
+    --calendar-time-sticky-left: 0px;
     /* Framed sidebar columns */
     --calendar-staff-zone-edge: #4a4a6a;
     --calendar-rooms-zone-edge: #455a64;
@@ -4970,15 +4987,15 @@ button.checkin-checkout-btn:active {
     --calendar-zones-divider: #90a4ae;
 }
 .calendar-grid.calendar-has-right-section {
-    grid-template-columns: var(--calendar-staff-col-width, 52px) var(--calendar-rooms-col-width, 120px) var(--calendar-cap-col-width, 168px) 80px repeat(var(--num-main-therapists), 1fr) 48px repeat(var(--num-right-therapists), 1fr);
+    grid-template-columns: 80px repeat(var(--num-main-therapists), 1fr) 48px repeat(var(--num-right-therapists), 1fr);
 }
 
 /* Room view: extra top row — "Single rooms" | "Couples" | "Unassigned" above Rm headers */
 .calendar-grid.calendar-by-room {
-    --room-superheader-row-height: 32px;
+    --room-superheader-row-height: 48px;
 }
 .calendar-grid.calendar-by-room .room-superheader-corner {
-    grid-column: 1 / span 4;
+    grid-column: 1 / span 1;
     box-sizing: border-box;
     min-height: var(--room-superheader-row-height);
     background: #495057;
@@ -5400,10 +5417,11 @@ button.checkin-checkout-btn:active {
 .rooms-header-cols .room-col-0 { background: #3d8b6e; color: #fff; }
 .rooms-header-cols .room-col-1 { background: #7e6eb8; color: #fff; }
 .rooms-header-cols .room-col-2 { background: #b84a32; color: #fff; }
-.rooms-header-cols .room-col-3 { background: #c97a2e; color: #fff; }
-.rooms-header-cols .room-col-4 { background: #2a8aad; color: #fff; }
+/* Rm 3/4/6: avoid couple orange (#ff9800) and single blue (#007bff) */
+.rooms-header-cols .room-col-3 { background: #0d9488; color: #fff; }
+.rooms-header-cols .room-col-4 { background: #558b2f; color: #fff; }
 .rooms-header-cols .room-col-5 { background: #b85c8a; color: #fff; }
-.rooms-header-cols .room-col-6 { background: #b8982e; color: #fff; }
+.rooms-header-cols .room-col-6 { background: #3f51b5; color: #fff; }
 .rooms-header-cols .room-col-02d { background: #4a8c5c; color: #fff; }
 
 /* Capacity / “appts available” column (between Rooms and Time) */
@@ -5771,10 +5789,10 @@ button.checkin-checkout-btn:active {
 .rooms-room-slot--avail.room-col-0 { border-color: #3d8b6e; background: rgba(233, 245, 239, 0.98); color: #2d5a47; }
 .rooms-room-slot--avail.room-col-1 { border-color: #7e6eb8; background: rgba(239, 234, 248, 0.98); color: #4a3d6b; }
 .rooms-room-slot--avail.room-col-2 { border-color: #b84a32; background: rgba(252, 236, 230, 0.98); color: #5c2619; }
-.rooms-room-slot--avail.room-col-3 { border-color: #c97a2e; background: rgba(255, 242, 224, 0.98); color: #6b4510; }
-.rooms-room-slot--avail.room-col-4 { border-color: #2a8aad; background: rgba(230, 245, 250, 0.98); color: #1a5a6e; }
+.rooms-room-slot--avail.room-col-3 { border-color: #0d9488; background: rgba(204, 251, 241, 0.98); color: #115e59; }
+.rooms-room-slot--avail.room-col-4 { border-color: #558b2f; background: rgba(241, 248, 233, 0.98); color: #33691e; }
 .rooms-room-slot--avail.room-col-5 { border-color: #b85c8a; background: rgba(250, 237, 243, 0.98); color: #6b3a52; }
-.rooms-room-slot--avail.room-col-6 { border-color: #b8982e; background: rgba(253, 246, 227, 0.98); color: #5c4a1a; }
+.rooms-room-slot--avail.room-col-6 { border-color: #3f51b5; background: rgba(232, 234, 246, 0.98); color: #1a237e; }
 .rooms-room-slot--avail.room-col-02d { border-color: #4a8c5c; background: rgba(232, 244, 234, 0.98); color: #2d4a36; }
 /* Tight box: single free slot */
 .rooms-room-slot--solo {
@@ -5868,9 +5886,11 @@ button.checkin-checkout-btn:active {
 .room-header {
     background: #28a745;
     color: white;
-    padding: 9px 10px;
+    /* ~50% taller than previous 9px vertical padding */
+    padding: 14px 10px;
     text-align: center;
     font-weight: bold;
+    font-size: 15px;
     white-space: nowrap;
     position: sticky;
     top: var(--calendar-sticky-toolbar-h, 0px);
@@ -5878,23 +5898,25 @@ button.checkin-checkout-btn:active {
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
-/* Room view: each room column has its own header + cell tint */
+/* Room view: keep distinct top Rm header colors; uniform light cells under them */
 .calendar-grid .room-header.room-col-0 { background: #3d8b6e; }
-.calendar-grid .appointment-cell.room-col-0 { background: #e9f5ef; }
 .calendar-grid .room-header.room-col-1 { background: #7e6eb8; }
-.calendar-grid .appointment-cell.room-col-1 { background: #efeaf8; }
 .calendar-grid .room-header.room-col-2 { background: #b84a32; }
-.calendar-grid .appointment-cell.room-col-2 { background: #fcece6; }
-.calendar-grid .room-header.room-col-3 { background: #c97a2e; }
-.calendar-grid .appointment-cell.room-col-3 { background: #fff2e0; }
-.calendar-grid .room-header.room-col-4 { background: #2a8aad; }
-.calendar-grid .appointment-cell.room-col-4 { background: #e6f5fa; }
+.calendar-grid .room-header.room-col-3 { background: #0d9488; }
+.calendar-grid .room-header.room-col-4 { background: #558b2f; }
 .calendar-grid .room-header.room-col-5 { background: #b85c8a; }
-.calendar-grid .appointment-cell.room-col-5 { background: #faedf3; }
-.calendar-grid .room-header.room-col-6 { background: #b8982e; }
-.calendar-grid .appointment-cell.room-col-6 { background: #fdf6e3; }
+.calendar-grid .room-header.room-col-6 { background: #3f51b5; }
 .calendar-grid .room-header.room-col-02d { background: #4a8c5c; }
-.calendar-grid .appointment-cell.room-col-02d { background: #e8f4ea; }
+.calendar-grid .appointment-cell.room-col-0,
+.calendar-grid .appointment-cell.room-col-1,
+.calendar-grid .appointment-cell.room-col-2,
+.calendar-grid .appointment-cell.room-col-3,
+.calendar-grid .appointment-cell.room-col-4,
+.calendar-grid .appointment-cell.room-col-5,
+.calendar-grid .appointment-cell.room-col-6,
+.calendar-grid .appointment-cell.room-col-02d {
+    background: #eef1f4;
+}
 
 /* Light vertical guides: left of Rm 0 (after Time) and left of Rm 5 (singles/couples) */
 .calendar-grid .room-header.room-col-0,
@@ -5914,12 +5936,22 @@ button.checkin-checkout-btn:active {
     box-shadow: inset 0 0 0 1px rgba(0,0,0,0.2);
 }
 
-/* Bolder grid line on the hour, across the whole calendar */
+/* Half-hour (:00→:30): thinner gray separator */
+.rooms-cell.grid-half-line,
+.capacity-cell.grid-half-line,
+.time-slot.grid-half-line,
+.appointment-cell.grid-half-line,
+.right-section-toggle-cell.grid-half-line {
+    border-bottom: 1px solid #c5c5c5 !important;
+}
+
+/* Hour / 整点 (before next hour): thicker gray line */
 .rooms-cell.grid-hour-line,
 .capacity-cell.grid-hour-line,
 .time-slot.grid-hour-line,
-.appointment-cell.grid-hour-line {
-    border-bottom: 2px solid #999 !important;
+.appointment-cell.grid-hour-line,
+.right-section-toggle-cell.grid-hour-line {
+    border-bottom: 2px solid #888 !important;
 }
 
 /* Official regular hours (10am open, 9pm close) — full-width row, all body columns */
@@ -6070,6 +6102,225 @@ button.checkin-checkout-btn:active {
     border-bottom: none;
 }
 
+/* Minimal sandwich: name → service(s) → duration → start–end → requested masseuse → Rm */
+.appointment-headline--sandwich {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 2px;
+    min-width: 0;
+    width: 100%;
+}
+/* Compact icon strip: top-right icons on one row; note icon stacked directly below */
+.appointment-sandwich-icons-tr {
+    position: absolute;
+    top: 0;
+    right: 0;
+    z-index: 6;
+    display: flex;
+    flex-direction: column;
+    flex-wrap: nowrap;
+    align-items: flex-end;
+    justify-content: flex-start;
+    gap: 1px;
+    max-width: 48%;
+    line-height: 1;
+    pointer-events: none;
+}
+.appointment-sandwich-icons-tr-row {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: nowrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 3px;
+    line-height: 1;
+}
+.appointment-sandwich-icons-tr > *,
+.appointment-sandwich-icons-tr-row > * {
+    pointer-events: auto;
+    flex-shrink: 0;
+}
+.appointment-sandwich-notes-below {
+    display: flex;
+    justify-content: flex-end;
+    line-height: 1;
+}
+.appointment-sandwich-notes-below .appointment-notes-indicator {
+    margin-left: 0;
+    font-size: 11px;
+    line-height: 1;
+}
+.appointment-headline--sandwich-has-icons {
+    /* Small gap only — icons sit in the corner without a large empty strip */
+    padding-right: 1.35rem;
+}
+.appointment-sandwich-icons-tr .appointment-sandwich-facial {
+    display: inline-flex;
+    color: #0d47a1;
+    line-height: 0;
+}
+/* Must beat .appointment-block .calendar-facial-mask-svg { width: 58px }
+   Base was 5px; +130% → 11.5px */
+.appointment-block .appointment-sandwich-icons-tr .calendar-facial-mask-svg,
+.appointment-sandwich-icons-tr .calendar-facial-mask-svg {
+    width: 30px !important;
+    max-width: 30px !important;
+    height: auto !important;
+    aspect-ratio: 64 / 72;
+    display: block;
+    filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.1));
+}
+.appointment-sandwich-icons-tr .appointment-cupping-icon,
+.appointment-sandwich-icons-tr .appointment-bian-stone-icon {
+    font-size: 12px;
+    margin: 0;
+    line-height: 1;
+}
+.appointment-sandwich-icons-tr .appointment-cupping-icon svg,
+.appointment-sandwich-icons-tr .appointment-bian-stone-icon .calendar-bian-stone-svg {
+    width: 13px;
+    height: auto;
+    display: block;
+}
+.appointment-sandwich-icons-tr .appointment-badge-3s {
+    font-size: 8px;
+    padding: 0 3px;
+    line-height: 1.2;
+    margin: 0;
+}
+.appointment-sandwich-icons-tr .appointment-sandwich-phone,
+.appointment-sandwich-icons-tr .appointment-booked-by-us {
+    font-size: 11px;
+    line-height: 1;
+    margin: 0;
+}
+.appointment-sandwich-badges {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 3px;
+}
+.appointment-headline--sandwich .appointment-headline-name {
+    display: block;
+    width: 100%;
+    font-weight: 700;
+    font-size: inherit;
+    line-height: 1.25;
+    overflow-wrap: break-word;
+    text-align: left;
+}
+/* Customer name + start–end: never ellipsis-shorten either */
+.appointment-headline--sandwich .appointment-sandwich-name-time {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: baseline;
+    width: 100%;
+    min-width: 0;
+    font-weight: 700;
+    font-size: inherit;
+    line-height: 1.25;
+    text-align: left;
+    overflow: visible;
+}
+.appointment-sandwich-customer {
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: visible;
+    white-space: normal;
+    font-weight: inherit;
+    font-size: inherit;
+    line-height: inherit;
+    color: inherit;
+}
+.appointment-sandwich-time-inline {
+    flex: 0 0 auto;
+    white-space: nowrap;
+    font-weight: inherit;
+    font-size: inherit;
+    line-height: inherit;
+    color: inherit;
+}
+.appointment-sandwich-name-time-sep {
+    flex: 0 0 auto;
+    white-space: pre;
+    letter-spacing: 0.12em;
+}
+.top-bar-row-summaries--below-calendar {
+    margin: 8px 12px 12px;
+}
+.appointment-headline--sandwich .appointment-headline-service {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 1px;
+    width: 100%;
+    line-height: 1.25;
+    text-align: left;
+}
+/* Service lines: never ellipsis-shorten (Deep Tissue etc. stay fully visible) */
+.appointment-headline--sandwich .appointment-service-line {
+    display: block;
+    width: 100%;
+    white-space: normal;
+    overflow: visible;
+    overflow-wrap: break-word;
+    font-weight: 600;
+    color: #37474f;
+}
+.appointment-sandwich-time-range {
+    display: block;
+    width: 100%;
+    text-align: left;
+    font-size: 11px;
+    font-weight: 500;
+    line-height: 1.25;
+    color: #455a64;
+}
+.appointment-sandwich-icons-tr .appointment-new-badge {
+    font-size: 8px;
+    padding: 0 3px;
+    line-height: 1.2;
+    margin: 0;
+}
+.appointment-headline--sandwich .appointment-sandwich-room.appointment-room-compact {
+    display: inline-block;
+    align-self: flex-start;
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 1.2;
+    margin: 1px 0 0;
+    padding: 1px 5px;
+    border-radius: 3px;
+    letter-spacing: 0.02em;
+}
+.appointment-headline--sandwich .appointment-calendar-masseuse-stack {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: flex-start;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    margin-top: 2px;
+    margin-left: 0;
+    padding-left: 0;
+}
+.appointment-headline--sandwich .appointment-calendar-masseuse-chip,
+.appointment-headline--sandwich .appointment-booked-by-name-chip,
+.appointment-headline--sandwich .appointment-booked-by-masseuse-name-only {
+    align-self: flex-start;
+    margin-left: 0;
+}
+.appointment-headline--sandwich .appointment-calendar-us-phone-row {
+    justify-content: flex-start;
+    width: 100%;
+    margin-left: 0;
+    padding-left: 0;
+}
+
 /* David Golden — big gold graphic (mid → bottom), flashing bold gold border */
 .appointment-block.appointment-block-david-golden {
     border: 4px solid #ffd700 !important;
@@ -6177,6 +6428,14 @@ button.checkin-checkout-btn:active {
     border-left: 4px solid #ff9800;
 }
 
+/* Facial appointment — distinct from single (blue) and couple (orange) */
+.appointment-block.appointment-facial,
+.appointment-block.single.appointment-facial,
+.appointment-block.couple.appointment-facial {
+    background: #f3e5f5;
+    border-left: 4px solid #9c27b0;
+}
+
 /* Unassigned appointment styling */
 .appointment-block.unassigned {
     background: #ffe6e6;
@@ -6213,70 +6472,24 @@ button.checkin-checkout-btn:active {
     animation: david-golden-border-flash 1.1s ease-in-out infinite;
 }
 
-/* New appointment (booked in last hour): yellow highlight */
+/* New appointment: no special card color (NEW badge is top-right with other icons) */
 .appointment-block.appointment-new {
-    background: #fffde7 !important;
-    box-shadow: 0 0 0 1px rgba(251, 192, 45, 0.6);
+    /* intentionally empty — keep single / couple / facial colors */
 }
 
-/* Happening now (today only): high-contrast pulse + bright flash peak — syncAppointmentInProgressClasses in app.js */
-@keyframes appointment-in-progress-glow {
-    0%, 100% {
-        box-shadow:
-            0 0 0 3px #00c853,
-            0 0 0 6px rgba(0, 200, 83, 0.45),
-            0 0 22px rgba(0, 230, 118, 0.55),
-            0 1px 4px rgba(0, 0, 0, 0.14);
-        outline: 2px solid rgba(105, 240, 174, 0.95);
-        outline-offset: 1px;
-    }
-    35% {
-        box-shadow:
-            0 0 0 5px #69f0ae,
-            0 0 0 10px rgba(0, 230, 118, 0.35),
-            0 0 32px rgba(178, 255, 89, 0.65),
-            0 1px 4px rgba(0, 0, 0, 0.12);
-        outline: 2px solid #b2ff59;
-        outline-offset: 3px;
-    }
-    55% {
-        box-shadow:
-            0 0 0 4px #ffea00,
-            0 0 0 9px rgba(255, 234, 0, 0.5),
-            0 0 36px rgba(255, 235, 59, 0.85),
-            0 0 52px rgba(255, 255, 255, 0.35);
-        outline: 3px solid #fff9c4;
-        outline-offset: 4px;
-    }
-    75% {
-        box-shadow:
-            0 0 0 4px #00e676,
-            0 0 0 8px rgba(0, 230, 118, 0.4),
-            0 0 28px rgba(0, 200, 83, 0.6),
-            0 1px 4px rgba(0, 0, 0, 0.12);
-        outline: 2px solid #69f0ae;
-        outline-offset: 2px;
-    }
-}
+/* Happening now (today only): bright neon green frame — thin, solid, no flash/pulse */
 .appointment-block.appointment-in-progress {
-    animation: appointment-in-progress-glow 0.85s ease-in-out infinite;
+    animation: none;
+    box-shadow:
+        0 0 0 3px #39ff14,
+        0 0 6px rgba(118, 255, 3, 0.45),
+        0 1px 3px rgba(0, 0, 0, 0.12);
+    outline: 2px solid #76ff03;
+    outline-offset: 1px;
     z-index: 18 !important;
 }
 .appointment-block.appointment-in-progress:hover {
-    animation: appointment-in-progress-glow 0.85s ease-in-out infinite;
-}
-
-@media (prefers-reduced-motion: reduce) {
-    .appointment-block.appointment-in-progress,
-    .appointment-block.appointment-in-progress:hover {
-        animation: none;
-        box-shadow:
-            0 0 0 4px #00c853,
-            0 0 0 8px rgba(0, 200, 83, 0.35),
-            0 0 20px rgba(0, 230, 118, 0.45);
-        outline: 3px solid #ffea00;
-        outline-offset: 2px;
-    }
+    animation: none;
 }
 
 /* Top-right time/Rm box: in room view, grid places this in column 2 (see .appointment-headline--float-meta) */
@@ -6389,20 +6602,20 @@ button.checkin-checkout-btn:active {
     color: #5c2619;
 }
 .appointment-room-compact.room-col-3 {
-    background: rgba(255, 242, 224, 0.98);
-    color: #6b4510;
+    background: rgba(204, 251, 241, 0.98);
+    color: #115e59;
 }
 .appointment-room-compact.room-col-4 {
-    background: rgba(230, 245, 250, 0.98);
-    color: #1a5a6e;
+    background: rgba(241, 248, 233, 0.98);
+    color: #33691e;
 }
 .appointment-room-compact.room-col-5 {
     background: rgba(250, 237, 243, 0.98);
     color: #6b3a52;
 }
 .appointment-room-compact.room-col-6 {
-    background: rgba(253, 246, 227, 0.98);
-    color: #5c4a1a;
+    background: rgba(232, 234, 246, 0.98);
+    color: #1a237e;
 }
 .appointment-room-compact.room-col-02d {
     background: rgba(232, 244, 234, 0.98);
@@ -8291,24 +8504,25 @@ body {
         display: block;
         margin-bottom: 0;
     }
-    /* Refresh: save vertical space; Load refetches the day. Small ORI stays for Square hint toggle. */
-    #refreshBtn {
+    /* API + Load/Refresh stay stacked top-right */
+    .header-compact .controls .header-top-right-stack {
+        order: 99;
+        margin-left: auto;
+        align-items: flex-end;
+    }
+    .header-load-refresh-stack #refreshBtn {
+        display: inline-block !important;
+    }
+    #squareOriHintToggle[hidden],
+    #dayLayoutFreezeWrap[hidden],
+    .lang-toggle-slot[hidden],
+    .controls-trailing-cluster[hidden],
+    #availabilityAuditBtn[hidden] {
         display: none !important;
     }
-    #squareOriHintToggle {
-        display: inline-flex !important;
-        align-items: center;
-        justify-content: center;
-        min-height: 30px !important;
-        padding: 4px 8px !important;
-        font-size: 11px !important;
-        font-weight: 600;
-        line-height: 1.1;
-    }
-    #loadBtn,
-    #viewToggleBtn {
-        min-height: 36px;
-        padding: 6px 10px;
+    .header-load-refresh-stack #loadBtn {
+        min-height: 32px;
+        padding: 5px 10px;
         font-size: 13px;
     }
     .date-nav {
@@ -8356,17 +8570,11 @@ body {
         text-align: center;
         font-size: 11px;
     }
-    /* Day actions: keep list + lock; hide secondary lock-from-time (still in desktop header). */
-    #dayLayoutLockFromTimeBtn {
+    /* Day list / lock-from-time stay hidden (override older mobile flex rule) */
+    #dayLayoutLockFromTimeBtn,
+    .header-daylist-btns,
+    .header-daylist-btns[hidden] {
         display: none !important;
-    }
-    .header-daylist-btns {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 4px 6px;
-        align-items: center;
-        width: 100%;
-        justify-content: flex-start;
     }
     .header-daylist-btns .today-appointments-btn,
     .header-daylist-btns .header-day-layout-freeze {

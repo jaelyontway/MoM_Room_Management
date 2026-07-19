@@ -67,6 +67,8 @@ class Event(BaseModel):
     package_type: Optional[str] = None
     # When set, show this instead of service name (e.g. "Luxury" instead of "Regular")
     display_service: Optional[str] = None
+    # Per Square appointment_segment: [{name, duration_minutes, is_addon}, ...] for accurate multi-service labels
+    service_segments: Optional[List[Dict[str, Any]]] = None
     # Check-in preferences (from BookingOverride)
     customer_id: Optional[str] = None  # Square customer id for last-pressure lookup
     pressure: Optional[str] = None    # deep, deep/medium, medium, medium/light, light (slot 1 or single)

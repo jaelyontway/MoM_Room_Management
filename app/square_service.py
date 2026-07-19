@@ -533,70 +533,103 @@ class SquareService:
             pass
         return ''
     
+    def _segment_service_name(self, segment, segment_idx: int = 0) -> str:
+        """Resolve one Square appointment_segment to a catalog/service title."""
+        if isinstance(segment, dict):
+            service_name = segment.get('service_variation_name', '') or ''
+            service_variation_id = segment.get('service_variation_id', '') or ''
+        else:
+            service_name = getattr(segment, 'service_variation_name', '') or ''
+            service_variation_id = getattr(segment, 'service_variation_id', '') or ''
+            if hasattr(segment, 'model_dump'):
+                seg_dict = segment.model_dump()
+                service_name = service_name or seg_dict.get('service_variation_name', '') or ''
+                service_variation_id = service_variation_id or seg_dict.get('service_variation_id', '') or ''
+
+        logger.debug(
+            "[SERVICE NAME] Segment %s has service_variation_name: '%s', service_variation_id: '%s'",
+            segment_idx, service_name, service_variation_id,
+        )
+
+        # When segment says "Regular", look up catalog so we can use parent item name (e.g. "Luxury $199")
+        if service_name and (service_name.strip().lower() != 'regular' or not service_variation_id):
+            return service_name
+        if service_variation_id:
+            looked_up = self._get_service_name_from_catalog(service_variation_id)
+            if looked_up:
+                return looked_up
+            if service_name:
+                return service_name
+            logger.warning(
+                "[SERVICE NAME] ✗ Could not find service name for variation_id: %s",
+                service_variation_id,
+            )
+            return ""
+        if service_name:
+            return service_name
+        logger.warning("No service_variation_id found in segment %s", segment_idx)
+        return ""
+
     def get_service_name(self, booking: Dict) -> str:
         """Extract service name(s) from booking. Returns all services if multiple."""
-        # Handle both dict and Square SDK object formats
         if isinstance(booking, dict):
             segments = booking.get('appointment_segments', [])
         else:
-            # Pydantic object or Square SDK object
             segments = getattr(booking, 'appointment_segments', []) or []
-        
+
         if not segments:
             logger.warning("No appointment_segments found in booking")
             return "Unknown Service"
-        
-        # Collect all service names from all segments
+
         service_names = []
-        
         for segment_idx, segment in enumerate(segments):
-            # 1) Try direct name on segment (if Square API returned it)
-            if isinstance(segment, dict):
-                service_name = segment.get('service_variation_name', '') or ''
-                service_variation_id = segment.get('service_variation_id', '') or ''
-            else:
-                # Pydantic object or SDK object - use attribute access first
-                service_name = getattr(segment, 'service_variation_name', '') or ''
-                service_variation_id = getattr(segment, 'service_variation_id', '') or ''
-                # If still empty, try model_dump() for Pydantic v2
-                if hasattr(segment, 'model_dump'):
-                    seg_dict = segment.model_dump()
-                    service_name = service_name or seg_dict.get('service_variation_name', '') or ''
-                    service_variation_id = service_variation_id or seg_dict.get('service_variation_id', '') or ''
-            
-            logger.debug(f"[SERVICE NAME] Segment {segment_idx} has service_variation_name: '{service_name}', service_variation_id: '{service_variation_id}'")
-            
-            # When segment says "Regular", look up catalog so we can use parent item name (e.g. "Luxury $199")
-            if service_name and (service_name.strip().lower() != 'regular' or not service_variation_id):
-                logger.debug(f"[SERVICE NAME] ✓ Found service name directly from segment {segment_idx}: {service_name}")
-                service_names.append(service_name)
-            elif service_variation_id:
-                logger.debug(f"[SERVICE NAME] Looking up service name from catalog for variation_id: {service_variation_id}")
-                looked_up = self._get_service_name_from_catalog(service_variation_id)
-                if looked_up:
-                    logger.debug(f"[SERVICE NAME] ✓ Found service name from catalog: {looked_up}")
-                    service_names.append(looked_up)
-                elif service_name:
-                    service_names.append(service_name)
-                else:
-                    logger.warning(f"[SERVICE NAME] ✗ Could not find service name for variation_id: {service_variation_id}")
-            elif service_name:
-                service_names.append(service_name)
-            else:
-                logger.warning(f"No service_variation_id found in segment {segment_idx}")
-        
+            name = self._segment_service_name(segment, segment_idx)
+            if name:
+                service_names.append(name)
+
         if not service_names:
             logger.warning("No service names found in any segment")
             return "Unknown Service"
-        
-        # Return all service names joined with comma
+
         if len(service_names) == 1:
             logger.info(f"[SERVICE NAME] Single service: {service_names[0]}")
             return service_names[0]
+        combined = ", ".join(service_names)
+        logger.info(f"[SERVICE NAME] Multiple services ({len(service_names)}): {combined}")
+        return combined
+
+    def get_service_segments(self, booking, *, allow_catalog: bool = True) -> List[Dict]:
+        """
+        Per Square appointment_segment: name + duration_minutes + is_addon.
+        Used by calendar cards so multi-service bookings (e.g. 60 Deep Tissue + 30 Trigger Point)
+        show each segment's own minutes, not the full block length on the first line only.
+        """
+        if isinstance(booking, dict):
+            segments = booking.get('appointment_segments', []) or []
         else:
-            combined = ", ".join(service_names)
-            logger.info(f"[SERVICE NAME] Multiple services ({len(service_names)}): {combined}")
-            return combined
+            segments = getattr(booking, 'appointment_segments', None) or []
+        out: List[Dict] = []
+        for idx, segment in enumerate(segments):
+            name = (self._segment_service_name(segment, idx) or "").strip()
+            if not name:
+                continue
+            if isinstance(segment, dict):
+                dur = segment.get('duration_minutes', 0) or 0
+            else:
+                dur = getattr(segment, 'duration_minutes', 0) or 0
+            try:
+                dur_i = int(dur)
+            except (TypeError, ValueError):
+                dur_i = 0
+            is_addon = self._segment_is_time_neutral_addon(
+                segment, segments, allow_catalog=allow_catalog
+            )
+            out.append({
+                'name': name,
+                'duration_minutes': dur_i if dur_i > 0 else None,
+                'is_addon': bool(is_addon),
+            })
+        return out
     
     def _get_service_name_from_catalog(self, variation_id: str) -> str:
         """Lookup service variation name via Catalog API (with cache)."""
@@ -1195,6 +1228,7 @@ class SquareService:
                 customer_name = self.get_customer_name(booking)
                 customer_phone = self.get_customer_phone(booking)
                 service_name = self.get_service_name(booking)
+                service_segments = self.get_service_segments(booking, allow_catalog=True)
                 booking_type = self.get_booking_type(booking)
                 customer_visits = self.get_customer_visits(customer_id) if customer_id else None
                 customer_massage_together_with = (
@@ -1204,6 +1238,7 @@ class SquareService:
                 customer_name = self.get_customer_name(booking, allow_remote=False)
                 customer_phone = ''
                 service_name = self._service_name_from_segments_only(booking)
+                service_segments = self.get_service_segments(booking, allow_catalog=False)
                 booking_type = self.get_booking_type_for_stats(booking)
                 customer_visits = None
                 customer_massage_together_with = None
@@ -1235,6 +1270,7 @@ class SquareService:
                 'therapist': therapist_name,
                 'therapist_2': therapist_2_name,
                 'service': service_name,
+                'service_segments': service_segments,
                 'customer': customer_name,
                 'customer_id': customer_id or '',
                 'customer_phone': customer_phone or '',
