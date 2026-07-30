@@ -8762,7 +8762,19 @@ function buildCustomerRequestsSummaryFromEvents(events, therapistsList) {
             ended,
         };
 
-        if ((e.booked_by || '').toLowerCase() === 'customer' && !e.original_any_available && !isAssignedTherapistStaff(e)) {
+        /* Staff 「正常轮」「不着人」 = turn, not a named request (even if Square attached a therapist) */
+        const noteBlobTurn = [e.seller_note, e.customer_note, e.addon_note].filter(Boolean).join(' ');
+        const staffSaysTurn =
+            /正常轮|不着人|不找人/.test(noteBlobTurn) ||
+            /\bnormal\s*turn\b/i.test(noteBlobTurn) ||
+            /\bany\s*available\b/i.test(noteBlobTurn);
+
+        if (
+            (e.booked_by || '').toLowerCase() === 'customer' &&
+            !e.original_any_available &&
+            !staffSaysTurn &&
+            !isAssignedTherapistStaff(e)
+        ) {
             const req = (e.original_therapist || '').trim();
             if (req) {
                 mergeItem({
@@ -9471,27 +9483,58 @@ function renderTherapistOrderBar(therapists, order, date) {
     el.style.display = 'block';
 
     function getOrderFromBar() {
-            const orderList = [];
-            el.querySelectorAll('.order-item').forEach(item => {
-                const sel = item.querySelector('.order-select');
-                const pos = parseInt(sel.dataset.position, 10);
-                if (sel.value) orderList.push({ therapist: sel.value, order: pos });
-            });
+        const orderList = [];
+        el.querySelectorAll('.order-item').forEach(item => {
+            const sel = item.querySelector('.order-select');
+            const pos = parseInt(sel.dataset.position, 10);
+            if (sel.value) orderList.push({ therapist: sel.value, order: pos });
+        });
         return orderList;
     }
+
+    /** If therapist already occupies another position, swap; never leave duplicates. */
+    function applyTherapistOrderSelectChange(select) {
+        const newVal = String(select.value || '').trim();
+        const oldVal = String(select.dataset.prevValue || '').trim();
+        if (newVal && newVal === oldVal) return;
+        if (newVal) {
+            el.querySelectorAll('.order-select').forEach((other) => {
+                if (other === select) return;
+                if (String(other.value || '').trim() !== newVal) return;
+                other.value = oldVal;
+                other.dataset.prevValue = oldVal;
+            });
+        }
+        select.dataset.prevValue = newVal;
+    }
+
     async function saveOrder() {
         if (!date) return;
         const orderList = getOrderFromBar();
-            const res = await fetch('/api/therapist-order', {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ date, order: orderList })
-            });
+        const res = await fetch('/api/therapist-order', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ date, order: orderList })
+        });
         if (res.ok) loadDay({ soft: true });
     }
 
     el.querySelectorAll('.order-select').forEach(select => {
-        select.addEventListener('change', saveOrder);
+        select.dataset.prevValue = select.value || '';
+        /* Edit opens empty — user picks the therapist (no auto-filled current name). */
+        select.addEventListener('focus', () => {
+            select.dataset.prevValue = select.value || '';
+            select.value = '';
+        });
+        select.addEventListener('blur', () => {
+            if (!select.value && select.dataset.prevValue) {
+                select.value = select.dataset.prevValue;
+            }
+        });
+        select.addEventListener('change', async () => {
+            applyTherapistOrderSelectChange(select);
+            await saveOrder();
+        });
     });
 
     el.querySelectorAll('.order-item-drag-handle').forEach(handle => {

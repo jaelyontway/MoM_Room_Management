@@ -41,6 +41,8 @@ class BookingOverride(Base):
     tip_split_evenly = Column(Boolean, nullable=False, default=False)  # if True, split tip_amount between both
     # Manual prepayment display ($); when set, overrides Square/suggested prepayment for calendar + detail modal
     prepayment_override = Column(Numeric(10, 2), nullable=True)
+    # Sticky "any available" as first seen (sheet rule 20): keep True even if Square later assigns a masseuse after pay
+    any_available_snapshot = Column(Boolean, nullable=True)
     arrived_at_1 = Column(DateTime(timezone=True), nullable=True)  # check-in time client 1 (couple)
     arrived_at_2 = Column(DateTime(timezone=True), nullable=True)  # check-in time client 2 (couple)
     appointment_locked = Column(Boolean, nullable=False, default=False)

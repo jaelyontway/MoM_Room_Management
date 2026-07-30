@@ -55,3 +55,6 @@ appt records/*.json
 # Runtime roster overrides (auto-detected masseuse add/ignore choices)
 roster_overrides.json
 
+# Persistent scheduling-sheet skill lists (facial / trigger / cupping / part-time)
+sheet_skills.json
+

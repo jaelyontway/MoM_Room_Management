@@ -51,7 +51,7 @@ class Event(BaseModel):
     original_room: Optional[str] = None
     customer_phone: Optional[str] = None
     original_tip_paid: Optional[float] = None  # tip from Square payment (shown under Original)
-    original_any_available: Optional[bool] = None  # True if booked "with any available" (show next to masseuse)
+    original_any_available: Optional[bool] = None  # Sticky any-available for sheet turns (keeps True after pay assigns a masseuse)
     prepayment_amount: Optional[float] = None  # prepayment in dollars (show on calendar and under Original)
     created_at: Optional[str] = None  # ISO datetime when booking was created (Square); used for "NEW" highlight
     # Customer profile: visits count from Square custom attribute (1 = first visit → "1stV"; ≥20 → loyalty)

@@ -1080,9 +1080,11 @@ class SquareService:
             logger.debug(f"resolve_voice_service from bookings: {e}")
         return (None, 1)
 
-    def _convert_raw_booking_row_to_dict(self, raw_booking, *, enrich_bookings: bool = True) -> Optional[Dict]:
+    def _convert_raw_booking_row_to_dict(self, raw_booking, *, enrich_bookings=True) -> Optional[Dict]:
         """Convert one Square list/retrieve booking row to internal dict; None if skip.
-        enrich_bookings=False skips customer/catalog/created_at hydration (customers-hours bulk path)."""
+        enrich_bookings=False skips customer/catalog/created_at hydration (customers-hours bulk path).
+        enrich_bookings='lite' (sheet Load): name + service, skip visits / together attrs / extra phone fetch.
+        """
         booking = raw_booking
         try:
             booking = _coerce_square_booking_row(booking)
@@ -1142,10 +1144,10 @@ class SquareService:
             if not segments:
                 logger.warning(f"Booking {booking_id} skipped: no appointment_segments")
                 return None
-            allow_cat = enrich_bookings
+            allow_cat = enrich_bookings is True  # False for lite/False — avoid catalog round-trips on sheet Load
             created_at = _get_created_at(booking)
             # List API may omit created_at for some bookings; fetch full booking when missing so NEW badge works for all
-            if enrich_bookings and created_at is None and booking_id and getattr(self.client, 'get_booking', None):
+            if enrich_bookings is True and created_at is None and booking_id and getattr(self.client, 'get_booking', None):
                 try:
                     full = self.client.get_booking(booking_id)
                     if full is not None:
@@ -1226,14 +1228,25 @@ class SquareService:
 
             if enrich_bookings:
                 customer_name = self.get_customer_name(booking)
-                customer_phone = self.get_customer_phone(booking)
-                service_name = self.get_service_name(booking)
-                service_segments = self.get_service_segments(booking, allow_catalog=True)
-                booking_type = self.get_booking_type(booking)
-                customer_visits = self.get_customer_visits(customer_id) if customer_id else None
-                customer_massage_together_with = (
-                    self.get_customer_massage_together_with(customer_id) if customer_id else None
-                )
+                if enrich_bookings == 'lite':
+                    # Sheet: skip catalog + visits (biggest cold-load cost after booking list)
+                    customer_phone = (
+                        self._customer_phone_cache.get(customer_id, '') if customer_id else ''
+                    )
+                    service_name = self._service_name_from_segments_only(booking)
+                    service_segments = self.get_service_segments(booking, allow_catalog=False)
+                    booking_type = self.get_booking_type_for_stats(booking)
+                    customer_visits = None
+                    customer_massage_together_with = None
+                else:
+                    customer_phone = self.get_customer_phone(booking)
+                    service_name = self.get_service_name(booking)
+                    service_segments = self.get_service_segments(booking, allow_catalog=True)
+                    booking_type = self.get_booking_type(booking)
+                    customer_visits = self.get_customer_visits(customer_id) if customer_id else None
+                    customer_massage_together_with = (
+                        self.get_customer_massage_together_with(customer_id) if customer_id else None
+                    )
             else:
                 customer_name = self.get_customer_name(booking, allow_remote=False)
                 customer_phone = ''
@@ -1303,6 +1316,48 @@ class SquareService:
             logger.error(f"Error converting booking {booking_id_str}: {e}")
             return None
 
+
+    def _prefetch_customer_names_parallel(self, raw_bookings, *, max_workers: int = 8) -> None:
+        """Warm customer-name cache concurrently (sheet fast path)."""
+        if not self.client or not raw_bookings:
+            return
+        ids = []
+        seen = set()
+        for raw in raw_bookings:
+            try:
+                b = _coerce_square_booking_row(raw)
+            except Exception:
+                b = raw
+            if isinstance(b, dict):
+                cid = (b.get('customer_id') or '').strip()
+            else:
+                cid = (getattr(b, 'customer_id', None) or '').strip()
+            if not cid or cid in seen or cid in self._customer_name_cache:
+                continue
+            seen.add(cid)
+            ids.append(cid)
+        if not ids:
+            return
+
+        def _one(cid: str) -> None:
+            try:
+                self.get_customer_name({'customer_id': cid}, allow_remote=True)
+            except Exception:
+                pass
+
+        try:
+            from concurrent.futures import ThreadPoolExecutor, as_completed
+            workers = max(1, min(int(max_workers or 8), len(ids)))
+            with ThreadPoolExecutor(max_workers=workers) as pool:
+                futs = [pool.submit(_one, cid) for cid in ids]
+                for f in as_completed(futs):
+                    try:
+                        f.result()
+                    except Exception:
+                        pass
+            logger.info('Prefetched %d customer name(s) with %d workers', len(ids), workers)
+        except Exception as e:
+            logger.warning('Customer name prefetch failed: %s', e)
 
     def _list_active_square_bookings_utc_window(
         self, start_at_min: str, start_at_max: str, *, merged_list: bool = True
@@ -1520,6 +1575,8 @@ class SquareService:
             active = self._list_active_square_bookings_utc_window(
                 start_at_min, start_at_max, merged_list=merged_list
             )
+            if enrich_bookings == 'lite':
+                self._prefetch_customer_names_parallel(active, max_workers=6)
             by_date = self._bucket_active_bookings_by_local_date(
                 active, local_tz, start_date, end_date, enrich_bookings=enrich_bookings
             )
@@ -1533,14 +1590,23 @@ class SquareService:
             logger.error('Error fetching bookings range from Square: %s', e, exc_info=True)
             return {}
 
-    def get_bookings_for_date(self, date: str) -> List[Dict]:
-        """Single local day; uses one range query (same as multi-day path) for consistency."""
+    def get_bookings_for_date(self, date: str, *, fast: bool = False) -> List[Dict]:
+        """Single local day; uses one range query (same as multi-day path) for consistency.
+
+        fast=True: two-pass location list only (no per-team-member booking queries) + lite enrich
+        (customer name/service; skip visits / massage-together custom attributes). Use for sheet Load.
+        """
         if not self.client:
             logger.warning('Square API not configured, returning empty list')
             return []
-        m = self.get_bookings_by_local_date_range(date, date)
+        m = self.get_bookings_by_local_date_range(
+            date,
+            date,
+            merged_list=not fast,
+            enrich_bookings=('lite' if fast else True),
+        )
         out = m.get(date, [])
-        logger.info('Fetched %d bookings for %s', len(out), date)
+        logger.info('Fetched %d bookings for %s (fast=%s)', len(out), date, fast)
         return out
 
     def list_recent_bookings_for_customer(

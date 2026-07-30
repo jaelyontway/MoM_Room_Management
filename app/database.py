@@ -273,6 +273,17 @@ def migrate_booking_prepayment_override():
         conn.commit()
 
 
+def migrate_booking_any_available_snapshot():
+    """Add any_available_snapshot for sheet turn logic (keep pre-payment any-available)."""
+    with engine.connect() as conn:
+        if not _table_exists(conn, "booking_overrides"):
+            conn.commit()
+            return
+        if not _column_exists(conn, "booking_overrides", "any_available_snapshot"):
+            conn.execute(text("ALTER TABLE booking_overrides ADD COLUMN any_available_snapshot BOOLEAN"))
+        conn.commit()
+
+
 def migrate_customer_hours_snapshot_booked_by_counts():
     """Add booked_online_count / booked_by_us_count to customer_hours_daily_snapshots (schema v2)."""
     with engine.connect() as conn:
@@ -296,6 +307,7 @@ def init_db():
     try:
         migrate_booking_overrides()
         migrate_booking_prepayment_override()
+        migrate_booking_any_available_snapshot()
         migrate_service_pay_rates()
         migrate_room_assignment_undo()
         migrate_customer_last_partner()

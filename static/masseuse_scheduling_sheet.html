@@ -159,12 +159,12 @@
 
         .mss-grid {
             display: grid;
-            grid-template-columns: repeat(4, minmax(0, 1fr));
+            grid-template-columns: repeat(3, minmax(0, 1fr));
             gap: 10px;
         }
         .mss-grid-extra {
             display: grid;
-            grid-template-columns: repeat(4, minmax(0, 1fr));
+            grid-template-columns: repeat(3, minmax(0, 1fr));
             gap: 10px;
             margin-top: 16px;
             padding-top: 16px;
@@ -231,30 +231,71 @@
         }
         .mss-table td.num,
         .mss-table th.col-num {
-            width: 18px;
+            width: 36px;
             text-align: center;
             font-weight: 700;
             font-size: 14px;
             padding: 2px 0;
         }
-        /* Shorter NM + Dur; bigger text; room for Price/Tip/Note */
+        .mss-lock-wrap {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 2px;
+            cursor: pointer;
+            user-select: none;
+            margin: 0;
+        }
+        .mss-lock-cb {
+            width: 12px;
+            height: 12px;
+            margin: 0;
+            padding: 0;
+            cursor: pointer;
+            flex-shrink: 0;
+            accent-color: #0d6efd;
+        }
+        .mss-lock-cb:disabled {
+            cursor: default;
+            opacity: 0.35;
+        }
+        .mss-row-num {
+            font-weight: 700;
+            font-size: 13px;
+            line-height: 1;
+            min-width: 0.9em;
+        }
+        .mss-table tr.row-locked td.num {
+            background: #e7f1ff;
+        }
+        /* NM wider for full customer name; Dur/Note tighter */
         .mss-table th.col-nm,
-        .mss-table td.nm { width: 12%; }
+        .mss-table td.nm { width: 20%; }
         .mss-table th.col-rm,
-        .mss-table td.rm { width: 11%; }
+        .mss-table td.rm { width: 8%; }
         .mss-table th.col-dur,
-        .mss-table td.dur { width: 12%; }
+        .mss-table td.dur { width: 16%; }
         .mss-table th.col-price,
-        .mss-table td.price { width: 15%; }
+        .mss-table td.price { width: 11%; }
         .mss-table th.col-tip,
-        .mss-table td.tip { width: 15%; }
+        .mss-table td.tip { width: 11%; }
         .mss-table th.col-note,
-        .mss-table td.note { width: 27%; }
-        .mss-table td.dur input.mss-cell {
+        .mss-table td.note { width: 18%; }
+        .mss-table td.nm input.mss-cell {
             font-size: 14px;
+            padding: 6px 3px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .mss-table td.dur input.mss-cell {
+            font-size: 13px;
             padding: 6px 1px;
-            letter-spacing: -0.04em;
+            letter-spacing: -0.03em;
             font-weight: 600;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: clip;
         }
         .mss-table input.mss-cell {
             width: 100%;
@@ -286,17 +327,33 @@
             position: relative;
             z-index: 1;
         }
-        .mss-table input.mss-cell.edited {
-            background: #fff8e1;
-        }
-        .mss-table tr.row-req input.mss-cell {
-            background: #fff8e6;
-        }
-        .mss-table tr.row-req input.mss-cell.edited {
-            background: #ffe082;
-        }
         .mss-table tr.row-warn td.num {
             background: #ffcdd2;
+        }
+        /* Rule 22: currently in massage */
+        .mss-table tr.row-now td {
+            background: #d8f5d8;
+        }
+        .mss-table tr.row-now input.mss-cell {
+            background: #d8f5d8;
+        }
+        .mss-remove-masseuse {
+            flex-shrink: 0;
+            width: 28px;
+            height: 28px;
+            border: 1px solid #adb5bd;
+            border-radius: 4px;
+            background: #fff;
+            color: #b02a37;
+            font-size: 18px;
+            font-weight: 700;
+            line-height: 1;
+            cursor: pointer;
+            padding: 0;
+        }
+        .mss-remove-masseuse:hover {
+            background: #f8d7da;
+            border-color: #b02a37;
         }
         .mss-hint {
             margin-top: 10px;
@@ -429,12 +486,253 @@
             border-color: #0b5ed7;
             color: #fff;
         }
+        .mss-row-ctrl {
+            display: inline-flex;
+            align-items: center;
+            gap: 2px;
+            flex-shrink: 0;
+            margin-left: 2px;
+            padding: 0 2px 0 4px;
+            border-left: 1px solid #dee2e6;
+        }
+        .mss-row-ctrl-lab {
+            font-size: 11px;
+            font-weight: 700;
+            color: #495057;
+            margin-right: 1px;
+            line-height: 1;
+            white-space: nowrap;
+        }
+        .mss-card-title .mss-row-btn {
+            flex-shrink: 0;
+            width: 24px;
+            height: 24px;
+            border: 1px solid #adb5bd;
+            border-radius: 4px;
+            background: #fff;
+            font-weight: 700;
+            font-size: 14px;
+            line-height: 1;
+            cursor: pointer;
+            padding: 0;
+        }
+        .mss-card-title .mss-row-btn:hover { background: #e9ecef; }
+        .mss-table tr.row-xg td.num {
+            font-size: 11px;
+            letter-spacing: -0.02em;
+        }
+        .mss-note-wrap {
+            display: flex;
+            flex-direction: column;
+            min-width: 0;
+            position: relative;
+        }
+        .mss-note-wrap > input.mss-cell {
+            font-size: 14px;
+            padding: 6px 2px;
+        }
+        .mss-note-foot {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 4px;
+            line-height: 1;
+            min-height: 0;
+            margin-top: 1px;
+        }
+        .mss-with-lab {
+            font-size: 10px;
+            font-weight: 700;
+            color: #0b5ed7;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            min-width: 0;
+        }
+        .mss-detail-btn {
+            border: 0;
+            background: transparent;
+            padding: 0 2px;
+            margin: 0 0 0 auto;
+            font-size: 9px;
+            font-weight: 700;
+            color: #6c757d;
+            cursor: pointer;
+            text-transform: lowercase;
+            line-height: 1.1;
+            flex-shrink: 0;
+        }
+        .mss-detail-btn:hover:not(:disabled) { color: #0d6efd; }
+        .mss-detail-btn:disabled {
+            opacity: 0.35;
+            cursor: default;
+        }
+        .mss-split-panel {
+            margin-top: 10px;
+            padding: 8px 0 0;
+            border-top: 1px solid #dee2e6;
+        }
+        .mss-split-panel-title {
+            font-size: 12px;
+            font-weight: 700;
+            color: #333;
+            margin-bottom: 6px;
+        }
+        .mss-split-hint {
+            font-size: 11px;
+            color: #6c757d;
+            margin: 0 0 6px;
+        }
+        .mss-split-track {
+            display: inline-flex;
+            flex-wrap: wrap;
+            width: auto;
+            max-width: 100%;
+            height: auto;
+            border: 1px solid #ced4da;
+            border-radius: 4px;
+            overflow: hidden;
+            cursor: pointer;
+            user-select: none;
+            gap: 0;
+        }
+        .mss-split-seg {
+            flex: 0 0 auto;
+            /* ~25% of prior flex-fill width (was ~full track / n) */
+            width: 14px;
+            min-width: 10px;
+            height: 22px;
+            background: #e9ecef;
+            border-right: 1px solid #ced4da;
+            position: relative;
+            cursor: pointer;
+        }
+        .mss-split-seg:last-child { border-right: 0; }
+        .mss-split-seg:hover { background: #ced4da; }
+        .mss-split-seg.selected { background: #0d6efd; }
+        .mss-split-seg.selected:hover { background: #0b5ed7; }
+        .mss-split-seg .mss-seg-tick {
+            position: absolute;
+            left: 0;
+            bottom: 1px;
+            font-size: 7px;
+            color: #495057;
+            pointer-events: none;
+            line-height: 1;
+            transform: scale(0.85);
+            transform-origin: left bottom;
+        }
+        .mss-split-seg.selected .mss-seg-tick { color: #fff; }
+        .mss-split-range {
+            font-size: 12px;
+            font-weight: 600;
+            color: #333;
+            margin-top: 6px;
+        }
+        .mss-modal-dialog.mss-detail-dialog {
+            max-width: 640px;
+        }
+        .mss-modal-actions {
+            margin-top: 14px;
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            justify-content: flex-end;
+        }
+        .mss-modal-actions button {
+            padding: 8px 14px;
+            border: 1px solid #adb5bd;
+            border-radius: 6px;
+            background: #f8f9fa;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+        }
+        .mss-modal-actions button.primary {
+            background: #0d6efd;
+            border-color: #0b5ed7;
+            color: #fff;
+        }
+        .mss-table th.col-note,
+        .mss-table td.note { width: 18%; }
+        .mss-skills-panel {
+            display: none;
+            margin: 8px 12px 10px;
+            padding: 10px 12px;
+            background: #fff;
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            font-size: 13px;
+        }
+        .mss-skills-panel.open { display: block; }
+        .mss-skills-panel-title {
+            font-weight: 700;
+            margin-bottom: 8px;
+            font-size: 13px;
+        }
+        .mss-skills-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 8px 12px;
+        }
+        .mss-skills-panel label {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            font-weight: 600;
+            font-size: 12px;
+        }
+        .mss-skills-panel input {
+            padding: 6px 8px;
+            font-size: 13px;
+            border: 1px solid #ced4da;
+            border-radius: 4px;
+        }
+        #mssSkillsBtn.active {
+            background: #0d6efd;
+            border-color: #0b5ed7;
+            color: #fff;
+        }
+        .mss-skills-actions {
+            margin-top: 10px;
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+        .mss-skills-actions button {
+            padding: 6px 12px;
+            border-radius: 6px;
+            border: 1px solid #adb5bd;
+            background: #f8f9fa;
+            font-weight: 600;
+            cursor: pointer;
+        }
+        .mss-skills-actions button.primary {
+            background: #0d6efd;
+            border-color: #0b5ed7;
+            color: #fff;
+        }
+        .mss-name-picker-section {
+            padding: 8px 12px 4px;
+            font-size: 12px;
+            font-weight: 700;
+            color: #555;
+            background: #f1f3f5;
+        }
+        .mss-picker-item.mss-working {
+            background: #fff;
+        }
+        .mss-picker-item.mss-not-working {
+            background: #e9ecef;
+            color: #495057;
+        }
 
         @media print {
             body { background: #fff; padding: 4px; overflow: visible; }
             .mss-header .mss-controls button:not(.print-btn),
             .mss-header .mss-controls a.mss-btn,
             .mss-rules,
+            .mss-skills,
             .mss-hint { display: none !important; }
             .mss-sheet {
                 box-shadow: none;
@@ -459,30 +757,35 @@
             <button type="button" id="mssLoadBtn" title="Reload from calendar and keep your edits">Load</button>
             <button type="button" class="secondary" id="mssRefreshBtn" title="Same as Load">Refresh</button>
             <button type="button" class="warn-btn" id="mssClearEditsBtn" title="Clear local edits for this date">Clear edits</button>
+            <button type="button" class="secondary" id="mssSkillsBtn" title="Facial / trigger / cupping / part-time lists">Skills</button>
             <button type="button" class="secondary" id="mssAddMasseuseBtn" title="Add an extra masseuse block (may need scroll)">+ Masseuse</button>
             <button type="button" class="print-btn" id="mssPrintBtn">Print</button>
-            <a class="mss-btn secondary" href="/static/docs/sheet_rules.md" target="_blank" rel="noopener">Rules</a>
         </div>
     </div>
 
     <div id="mssStatus" class="mss-status">Pick a date and click Load.</div>
 
-    <details class="mss-rules" id="mssRules">
-        <summary>Rules (from sheet_rules.md) — manager can override anything by editing cells</summary>
-        <div class="mss-rules-body">
-            <ul>
-                <li><strong>#</strong> customer count · <strong>NM</strong> name · <strong>RM</strong> room · <strong>Dur</strong> = start–end time · <strong>Price</strong> = 60/90… minutes · <strong>Tip</strong> · <strong>Note</strong> = 3 senses / facial / cupping / other massage add-ons (not aromatherapy, scalp oil, pain relief oil, or 大套).</li>
-                <li>Non-requested appts follow <strong>turn order</strong>; requested appts still count as a turn (she can take other customers when it is her turn again)</li>
-                <li>Requested masseuse → schedule around that appt’s time/duration</li>
-                <li>Couples use <strong>2 masseuses</strong> at the same time</li>
-                <li>Only <strong>Tina</strong> for facial / lymphatic · only <strong>Casey/Cassey</strong> &amp; <strong>May</strong> for trigger point (auto-assign; you can still override)</li>
-                <li>All cells are editable; tips sync from calendar tips and stay editable</li>
-                <li>Extra masseuses (+ Masseuse) appear below and may scroll</li>
-                <li>Click <strong>NM</strong> (including empty) → search and choose a customer · Details inside picker</li>
-                <li>Edits auto-save in this browser · each day also saves to hard drive folder <strong>appt records</strong></li>
-            </ul>
+    <div class="mss-skills-panel" id="mssSkillsPanel" hidden>
+        <div class="mss-skills-panel-title">Skills — comma-separated names (saved forever on this computer)</div>
+        <div class="mss-skills-grid">
+            <label>Facial / 小脸
+                <input type="text" id="mssSkillFacial" placeholder="Tina, Lynn" />
+            </label>
+            <label>Trigger point
+                <input type="text" id="mssSkillTrigger" placeholder="Casey, May" />
+            </label>
+            <label>Fire cupping / 火罐
+                <input type="text" id="mssSkillCupping" placeholder="Sophia, Casey, Vicky" />
+            </label>
+            <label>Part-time / manual-only (no auto turn)
+                <input type="text" id="mssSkillManual" placeholder="Lynn" />
+            </label>
         </div>
-    </details>
+        <div class="mss-skills-actions">
+            <button type="button" class="primary" id="mssSkillsSaveBtn">Save</button>
+            <button type="button" id="mssSkillsResetBtn">Reset defaults</button>
+        </div>
+    </div>
 
     <div class="mss-fit-host" id="mssFitHost">
         <div class="mss-sheet" id="mssSheet" hidden>
@@ -493,16 +796,19 @@
             </div>
             <div class="mss-grid" id="mssGrid"></div>
             <div class="mss-grid-extra" id="mssGridExtra" hidden></div>
-            <p class="mss-hint">Yellow = saved edits · Click <strong>NM</strong> (empty or filled) to search a customer · Tip syncs to calendar · Saved to <strong>appt records</strong></p>
+            <p class="mss-hint">Green = in massage · 小工# rows under regular · Click name/NM to pick</p>
         </div>
     </div>
 
     <div id="mssDetailModal" class="mss-modal" hidden>
         <div class="mss-modal-backdrop" id="mssDetailBackdrop"></div>
-        <div class="mss-modal-dialog" role="dialog" aria-modal="true" aria-labelledby="mssDetailTitle">
+        <div class="mss-modal-dialog mss-detail-dialog" role="dialog" aria-modal="true" aria-labelledby="mssDetailTitle">
             <h2 id="mssDetailTitle">Appointment</h2>
             <div id="mssDetailBody"></div>
-            <button type="button" class="mss-modal-close" id="mssDetailClose">Close</button>
+            <div class="mss-modal-actions">
+                <button type="button" class="primary" id="mssDetailApplyBtn">Apply split</button>
+                <button type="button" id="mssDetailClose">Close</button>
+            </div>
         </div>
     </div>
 
@@ -510,7 +816,7 @@
         <div class="mss-modal-backdrop" id="mssPickerBackdrop"></div>
         <div class="mss-modal-dialog mss-picker-dialog" role="dialog" aria-modal="true" aria-labelledby="mssPickerTitle">
             <h2 id="mssPickerTitle">Choose customer</h2>
-            <p class="mss-picker-hint" id="mssPickerHint">Tap a name to put that appointment on this masseuse row. If they are already on the sheet, the two rows swap.</p>
+            <p class="mss-picker-hint" id="mssPickerHint">Tap a name to put that appointment on this masseuse row. Displaced customer moves to fewest free.</p>
             <input type="search" id="mssPickerSearch" class="mss-picker-search" placeholder="Search customer, room, or time…" autocomplete="off" />
             <div id="mssPickerList" class="mss-picker-list"></div>
             <div class="mss-picker-actions">
@@ -521,6 +827,18 @@
         </div>
     </div>
 
-    <script src="/static/masseuse_scheduling_sheet.js?v=9"></script>
+    <div id="mssNamePickerModal" class="mss-modal" hidden>
+        <div class="mss-modal-backdrop" id="mssNamePickerBackdrop"></div>
+        <div class="mss-modal-dialog mss-picker-dialog" role="dialog" aria-modal="true" aria-labelledby="mssNamePickerTitle">
+            <h2 id="mssNamePickerTitle">Choose masseuse</h2>
+            <p class="mss-picker-hint">White = working today · Gray = not working · pick someone already on the sheet to swap</p>
+            <div id="mssNamePickerList" class="mss-picker-list"></div>
+            <div class="mss-picker-actions">
+                <button type="button" id="mssNamePickerCloseBtn">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/masseuse_scheduling_sheet.js?v=42"></script>
 </body>
 </html>

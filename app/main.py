@@ -16,6 +16,10 @@ import re
 import uuid
 import socket
 from dateutil import parser as dateutil_parser
+import time
+import logging
+
+logger = logging.getLogger(__name__)
 
 from app.database import init_db, get_db, SessionLocal
 from app.schemas import (
@@ -1081,17 +1085,19 @@ def _assigned_bookings_for_date(
     current_service: Any,
     *,
     square_bookings_if_already_loaded: Optional[List[dict]] = None,
+    fast: bool = False,
 ) -> Tuple[List[Dict], Dict[str, BookingOverride], List[str], List[str]]:
     """Fetch Square (or use preloaded), filter, assign rooms — same inputs as GET /api/day calendar.
 
     Returns (assigned_bookings, overrides_by_booking, therapists, detected_new_therapists).
+    fast=True: fewer Square list calls (no per-therapist booking merge) + skip full team roster fetch.
     """
     if square_bookings_if_already_loaded is not None:
         bookings = list(square_bookings_if_already_loaded)
     else:
         if current_service.client:
-            logger.info(f"[REAL API] Fetching Square bookings for {date}")
-            bookings = current_service.get_bookings_for_date(date)
+            logger.info(f"[REAL API] Fetching Square bookings for {date} (fast={fast})")
+            bookings = current_service.get_bookings_for_date(date, fast=fast)
             logger.info(f"[REAL API] Found {len(bookings)} bookings from Square")
             if len(bookings) == 0:
                 logger.info(f"[REAL API] No bookings found for {date} - this is normal if there are no appointments")
@@ -1114,7 +1120,7 @@ def _assigned_bookings_for_date(
     ):
         therapists_from_bookings.add("Staff")
     all_therapists = set(therapists_from_bookings)
-    if current_service.client:
+    if current_service.client and not fast:
         try:
             team_members = current_service.client.get_team_members()
             for member in team_members:
@@ -1188,16 +1194,92 @@ def _assigned_bookings_for_date(
     return assigned_bookings, overrides_by_booking, therapists, detected_new_therapists
 
 
+def _staff_note_means_turn_any_available(
+    customer_note: Optional[str] = None,
+    seller_note: Optional[str] = None,
+    addon_note: Optional[str] = None,
+) -> bool:
+    """Staff note phrases that mean: not a named request — use normal turn order.
+
+    Front desk often writes e.g. 「正常轮」「不找人」 even when Square still has a
+    team member attached (so any_team_member is false).
+    """
+    text = " ".join(
+        str(x).strip()
+        for x in (customer_note, seller_note, addon_note)
+        if x and str(x).strip()
+    )
+    if not text:
+        return False
+    if "正常轮" in text or "不找人" in text or "不着人" in text:
+        return True
+    low = text.lower()
+    if "normal turn" in low:
+        return True
+    # "no request" / "anyone" / "any available" as staff shorthand
+    if re.search(r"\bany\s*available\b", low) or re.search(r"\banyone\b", low):
+        return True
+    if re.search(r"\bno\s*request\b", low) or re.search(r"\bnot\s*requested\b", low):
+        return True
+    return False
+
+
+def _sticky_any_available_for_sheet(
+    db: Session,
+    date: str,
+    booking_id: str,
+    current_any: bool,
+    ov: Optional[BookingOverride],
+    overrides_by_booking: Dict[str, BookingOverride],
+    *,
+    notes_force_any: bool = False,
+) -> bool:
+    """Rule 20: remember first-seen any-available; keep True after payment assigns a masseuse.
+
+    Once we have observed any_available=True for a booking/date, later Square flips to a
+    named therapist must not change turn-order distribution to "requested".
+
+    Staff notes 「正常轮」「不找人」 force any-available for the sheet (and persist snapshot).
+    """
+    if notes_force_any:
+        current_any = True
+    current = bool(current_any)
+    snap = getattr(ov, "any_available_snapshot", None) if ov is not None else None
+    if snap is True:
+        return True
+    # Notes override a prior False snapshot (Square named someone but desk wrote 正常轮)
+    if notes_force_any:
+        if ov is None:
+            ov = BookingOverride(booking_id=booking_id, date=date)
+            db.add(ov)
+            overrides_by_booking[booking_id] = ov
+        if getattr(ov, "any_available_snapshot", None) is not True:
+            ov.any_available_snapshot = True
+        return True
+    if snap is False and not current:
+        return False
+    new_snap = True if current else False
+    if ov is None:
+        ov = BookingOverride(booking_id=booking_id, date=date)
+        db.add(ov)
+        overrides_by_booking[booking_id] = ov
+    if getattr(ov, "any_available_snapshot", None) != new_snap:
+        ov.any_available_snapshot = new_snap
+    return bool(new_snap)
+
+
 def build_day_response_for_date(
     db: Session,
     date: str,
     *,
     square_bookings_if_already_loaded: Optional[List[dict]] = None,
+    fast: bool = False,
 ) -> DayResponse:
     """Build full day payload: Square bookings, room assignment, events, summaries (same as GET /api/day).
 
     If square_bookings_if_already_loaded is set (e.g. after PUT /api/room already fetched Square),
     skip the duplicate Square list fetch and _without_square_test_profile (caller must have applied both).
+    fast=True: scheduling-sheet path — fewer Square round-trips, skip tip payments + no-room notify.
     """
     current_service = get_square_service()
     assigned_bookings, overrides_by_booking, therapists, detected_new_therapists = _assigned_bookings_for_date(
@@ -1205,12 +1287,17 @@ def build_day_response_for_date(
         date,
         current_service,
         square_bookings_if_already_loaded=square_bookings_if_already_loaded,
+        fast=fast,
     )
     
     # Pull suggested tips and prepayments from Square for this date (match payments to bookings by customer_id or note)
     suggested_tips = {}
     suggested_prepayments = {}
-    if current_service and getattr(current_service, 'get_suggested_tips_for_bookings', None):
+    if (
+        not fast
+        and current_service
+        and getattr(current_service, 'get_suggested_tips_for_bookings', None)
+    ):
         try:
             result = current_service.get_suggested_tips_for_bookings(date, assigned_bookings)
             if isinstance(result, tuple) and len(result) == 2:
@@ -1374,7 +1461,19 @@ def build_day_response_for_date(
             original_room=None,
             customer_phone=booking.get("customer_phone") or None,
             original_tip_paid=float(original_tip_paid) if original_tip_paid is not None else None,
-            original_any_available=booking.get("any_available", False),
+            original_any_available=_sticky_any_available_for_sheet(
+                db,
+                date,
+                bid,
+                bool(booking.get("any_available", False)),
+                ov,
+                overrides_by_booking,
+                notes_force_any=_staff_note_means_turn_any_available(
+                    booking.get("customer_note"),
+                    booking.get("seller_note"),
+                    booking.get("addon_note"),
+                ),
+            ),
             prepayment_amount=(
                 float(ov.prepayment_override)
                 if (ov and getattr(ov, "prepayment_override", None) is not None)
@@ -1399,6 +1498,11 @@ def build_day_response_for_date(
             booked_by=booking.get("booked_by"),
             back_walking_room_alert=_back_walking_room_alert_for_event(booking),
         ))
+
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
     
     # Service counts per therapist (for couple and single time-split, both therapists get credit)
     events_for_count = []
@@ -1456,6 +1560,7 @@ def build_day_response_for_date(
     facial_summary = {"count": len(facial_time_frames), "time_frames": facial_time_frames} if facial_time_frames else None
 
     # Customer requested a specific masseuse (not "any available") — summary bar above calendar
+    # Staff note 正常轮/不找人/不着人 → not a request (normal turn)
     customer_requests_items = []
     for e in events:
         if e.room == "ADDON":
@@ -1463,6 +1568,12 @@ def build_day_response_for_date(
         if (e.booked_by or "").lower() != "customer":
             continue
         if e.original_any_available:
+            continue
+        if _staff_note_means_turn_any_available(
+            getattr(e, "customer_note", None),
+            getattr(e, "seller_note", None),
+            getattr(e, "addon_note", None),
+        ):
             continue
         # Assigned masseuse is Staff (dropdown): treat like any available for this summary
         if (e.therapist or "").strip().lower() == "staff":
@@ -1493,7 +1604,7 @@ def build_day_response_for_date(
     # No-room alert: if any appointment (any service) has no room, notify immediately; cooldown per date to avoid spam
     unassigned_events = [e for e in events if e.room == "UNASSIGNED"]
     no_room_alert = len(unassigned_events) > 0
-    if no_room_alert:
+    if no_room_alert and not fast:
         cooldown_minutes = getattr(__import__("config").Config, "NO_ROOM_ALERT_COOLDOWN_MINUTES", 10)
         last_sent = db.query(NoRoomNotificationSent).filter(NoRoomNotificationSent.date == date).first()
         now_utc = datetime.now(timezone.utc)
@@ -1567,9 +1678,18 @@ def build_day_response_for_date(
     )
 
 
+# Short TTL cache for scheduling-sheet Loads (fast=1). Calendar keeps full path uncached.
+_DAY_FAST_CACHE: Dict[str, Tuple[float, DayResponse]] = {}
+_DAY_FAST_TTL_SEC = 45.0
+
+
 @app.get("/api/day")
 async def get_day(
     date: str = Query(..., description="Date in YYYY-MM-DD format"),
+    fast: bool = Query(
+        False,
+        description="Faster path for masseuse scheduling sheet (fewer Square round-trips)",
+    ),
     db: Session = Depends(get_db)
 ) -> DayResponse:
     """Get all bookings for a specific day with room assignments."""
@@ -1577,7 +1697,14 @@ async def get_day(
         datetime.strptime(date, '%Y-%m-%d')
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
-    return build_day_response_for_date(db, date)
+    if fast:
+        hit = _DAY_FAST_CACHE.get(date)
+        if hit and hit[0] > time.time():
+            return hit[1]
+    resp = build_day_response_for_date(db, date, fast=fast)
+    if fast:
+        _DAY_FAST_CACHE[date] = (time.time() + _DAY_FAST_TTL_SEC, resp)
+    return resp
 
 
 @app.get("/api/roster")
@@ -3350,17 +3477,37 @@ async def get_therapist_order(date: str = Query(..., description="YYYY-MM-DD"), 
 
 @app.put("/api/therapist-order")
 async def update_therapist_order(request: UpdateTherapistOrderRequest, db: Session = Depends(get_db)):
-    """Set therapist rotation order for the day."""
+    """Set therapist rotation order for the day.
+
+    Uniqueness: each therapist appears at most once. If the client sends the same
+    person twice (e.g. before a swap), keep the earliest order_number and drop later
+    duplicates — frontend swap logic should already prevent this.
+    """
     try:
         datetime.strptime(request.date, "%Y-%m-%d")
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid date. Use YYYY-MM-DD")
+    sorted_items = sorted(request.order or [], key=lambda x: (int(x.order), str(x.therapist or "")))
+    seen_norm = set()
+    cleaned = []
+    for item in sorted_items:
+        name = (item.therapist or "").strip()
+        if not name:
+            continue
+        norm = normalize_therapist_name(name)
+        if not norm or norm in seen_norm:
+            continue
+        seen_norm.add(norm)
+        cleaned.append((name, int(item.order)))
     db.query(TherapistDayOrder).filter(TherapistDayOrder.date == request.date).delete()
-    for item in request.order:
-        row = TherapistDayOrder(date=request.date, therapist_name=item.therapist, order_number=item.order)
-        db.add(row)
+    for name, order_number in cleaned:
+        db.add(TherapistDayOrder(date=request.date, therapist_name=name, order_number=order_number))
     db.commit()
-    return {"success": True, "date": request.date}
+    return {
+        "success": True,
+        "date": request.date,
+        "order": [{"therapist": n, "order": o} for n, o in cleaned],
+    }
 
 
 def _luxury_separate_fs_active(ov) -> bool:
@@ -4669,6 +4816,66 @@ def _appt_records_dir() -> str:
 
 def _appt_record_path(date: str) -> str:
     return os.path.join(_appt_records_dir(), f"{date}.json")
+
+
+def _sheet_skills_path() -> str:
+    return os.path.join(os.path.dirname(os.path.dirname(__file__)), "sheet_skills.json")
+
+
+@app.get("/api/sheet-skills")
+async def get_sheet_skills() -> Dict[str, Any]:
+    """Persistent scheduling-sheet skill lists (facial, trigger, cupping, part-time)."""
+    path = _sheet_skills_path()
+    if not os.path.isfile(path):
+        return {
+            "facial": ["Tina", "Lynn"],
+            "trigger": ["Casey", "Cassey", "May"],
+            "fireCupping": ["Sophia", "Casey", "Cassey", "Vicky"],
+            "manualOnly": ["Lynn"],
+        }
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        if not isinstance(data, dict):
+            raise ValueError("not an object")
+        return {
+            "facial": list(data.get("facial") or []),
+            "trigger": list(data.get("trigger") or []),
+            "fireCupping": list(data.get("fireCupping") or []),
+            "manualOnly": list(data.get("manualOnly") or []),
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Corrupt sheet_skills.json: {e}")
+
+
+@app.put("/api/sheet-skills")
+async def put_sheet_skills(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Save skill lists forever on disk (sheet_skills.json)."""
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="Body must be a JSON object")
+
+    def _names(key: str) -> list:
+        raw = payload.get(key)
+        if not isinstance(raw, list):
+            return []
+        out = []
+        for x in raw:
+            n = str(x or "").strip()
+            if n and n not in out:
+                out.append(n)
+        return out
+
+    body = {
+        "facial": _names("facial"),
+        "trigger": _names("trigger"),
+        "fireCupping": _names("fireCupping"),
+        "manualOnly": _names("manualOnly"),
+        "saved_at": datetime.now(timezone.utc).isoformat(),
+    }
+    path = _sheet_skills_path()
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(body, f, ensure_ascii=False, indent=2)
+    return {"success": True, "path": path, **{k: body[k] for k in ("facial", "trigger", "fireCupping", "manualOnly")}}
 
 
 @app.put("/api/appt-records/{date}")
