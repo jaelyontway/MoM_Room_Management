@@ -1,12 +1,31 @@
-"""Room assignment logic with priority rules."""
+"""
+Room assignment: business rules + one-shot CP-SAT day solve.
+
+Replaces the old greedy assignment with its rebalance / conflict-cleanup /
+repair patch passes. The whole day is solved atomically in app/room_solver.py:
+if an all-assigned solution exists it is found, so the "room free but
+UNASSIGNED" class of bugs cannot occur by construction.
+"""
+import logging
 import re
 from collections import defaultdict
-from datetime import datetime, timedelta
-from typing import List, Dict, Optional, Tuple, Any, Set
+from datetime import datetime
+from typing import Any, Dict, List, Optional, Set, Tuple
+
+from sqlalchemy.orm import Session
 
 from app.models import RoomAssignment
+from app.room_constants import (
+    BACK_WALKING_BAR_ROOMS,
+    COUPLE_PRIORITY,
+    FACIAL_SINGLE_TRY_ORDER,
+    SINGLE_PRIORITY,
+    intervals_overlap as _intervals_overlap,
+)
 from app.room_occupancy import physical_busy_segments_ts
-from sqlalchemy.orm import Session
+from app.room_solver import RoomRequest, Segment, segments_conflict, solve_day
+
+logger = logging.getLogger(__name__)
 
 # Service title chunks that are room/masseuse-neutral (Square time-neutral add-ons only).
 _ROOM_NEUTRAL_CHUNK_MARKERS = (
@@ -54,31 +73,10 @@ def booking_is_room_neutral_addon_only(service: Optional[str]) -> bool:
             return False
     return True
 
-# Physical rooms tracked for occupancy (02D maps to 0+2 when marking busy).
-_ROOM_OCCUPANCY_KEYS = ("0", "1", "2", "3", "4", "5", "6")
-
 
 def _parse_iso_timestamp(iso: str) -> float:
     s = iso.replace("Z", "+00:00") if iso.endswith("Z") else iso
     return datetime.fromisoformat(s).timestamp()
-
-
-# End/start from Square can differ by a few seconds on logically back-to-back appointments.
-# Strict float inequality (a1 <= b0) can falsely show overlap when one booking ends at 11:00:02
-# and the next starts at 11:00:00 — conflict cleanup then unassigns a couple even though Rm 5 is free.
-_OCCUPANCY_MIN_OVERLAP_SEC = 2.0
-
-
-def _intervals_overlap(a0: float, a1: float, b0: float, b1: float) -> bool:
-    """
-    True if [a0, a1) and [b0, b1) overlap by strictly more than
-    _OCCUPANCY_MIN_OVERLAP_SEC seconds. Touching boundaries (a1 == b0) or tiny
-    API clock crumbs under that width do not count — avoids false double-booking
-    and bogus UNASSIGNED (e.g. couple when Rm 5 is actually free back-to-back).
-    """
-    if a1 <= a0 or b1 <= b0:
-        return False
-    return (min(a1, b1) - max(a0, b0)) > _OCCUPANCY_MIN_OVERLAP_SEC
 
 
 _COUPLE_SLOT_TAG_RE = re.compile(r"\bcouples?\s*#\s*\d+\b", re.I)
@@ -182,10 +180,6 @@ def _booking_service_looks_like_facial(booking: Dict) -> bool:
     return (bool(s) and "facial" in s) or (bool(d) and "facial" in d)
 
 
-# Single facial: best 4 → 0 → 2, then Rm 1, then couple-capable 6/5; Rm 3 last. (Couple facials use 02D / 5 / 6 elsewhere.)
-_FACIAL_SINGLE_TRY_ORDER = ("4", "0", "2", "1", "6", "5")
-
-
 def _single_room_order_deprioritize_room3_for_facial(booking: Dict, base_order: List[str]) -> List[str]:
     """
     Non-facials: unchanged base_order.
@@ -196,15 +190,11 @@ def _single_room_order_deprioritize_room3_for_facial(booking: Dict, base_order: 
     if not _booking_service_looks_like_facial(booking):
         return order
     allowed = set(order)
-    ranked = [r for r in _FACIAL_SINGLE_TRY_ORDER if r in allowed]
+    ranked = [r for r in FACIAL_SINGLE_TRY_ORDER if r in allowed]
     rest = [r for r in order if r not in ranked and r != "3"]
     if "3" in allowed:
         return ranked + rest + ["3"]
     return ranked + rest
-
-
-# Single-only physical rooms (no 5/6 doubles); used for couple lookahead + rebalance moves.
-_BASE_SINGLE_PHYSICAL_ORDER = ["1", "3", "4", "2", "0"]
 
 
 def _pair_customer_key(booking: Dict) -> Optional[str]:
@@ -347,523 +337,268 @@ def _find_couple_room_note_pair_groups(
     return out
 
 
+def _booking_time_bounds(booking: Dict) -> Tuple[float, float]:
+    return (
+        _parse_iso_timestamp(booking["start_at"]),
+        _parse_iso_timestamp(booking["end_at"]),
+    )
+
+
+def _booking_duration_minutes(booking: Dict) -> int:
+    try:
+        s, e = _booking_time_bounds(booking)
+        return max(0, int(round((e - s) / 60.0)))
+    except Exception:
+        return 0
+
+
+def _sort_key(booking: Dict) -> Tuple[float, int]:
+    """Start ascending, duration descending (same order the greedy used)."""
+    try:
+        s, e = _booking_time_bounds(booking)
+    except Exception:
+        return (float("inf"), 0)
+    return (s, -int((e - s) / 60))
+
+
 class RoomAssigner:
-    """Handles automatic room assignment based on priority rules."""
-    
-    # Room setup
-    SINGLE_ROOMS = ['1', '3', '4']  # Fixed single rooms
-    DOUBLE_ROOMS = ['5', '6']  # Fixed double rooms (can be single)
-    CONVERTIBLE_ROOMS = ['0', '2']  # Can be single or merged into "02D"
-    
-    # Priority for COUPLE appointments
-    COUPLE_PRIORITY = ['5', '6', '02D']
-    # Priority for SINGLE appointments (single-only 1,3,4 and convertible 2,0 before couple rooms 6,5
-    # so that when we sort same-start singles by duration desc, longer sessions get single-only rooms and free 6,5 earlier)
-    SINGLE_PRIORITY = ['1', '3', '4', '2', '0', '6', '5']
-    # Try 5/6 before singles only when a couples booking starts soon after this single ends; otherwise
-    # late singles (e.g. Carmen until 4:30) would still "prefer double" for a far-future couple and
-    # steal Rm 5/6 from a couple at 4:00 (Kyle) on the same afternoon.
-    PREFER_DOUBLE_MAX_GAP_BEFORE_NEXT_COUPLE_SEC = 3600  # 1 hour
-    
+    """Automatic room assignment based on priority rules (CP-SAT day solve)."""
+
+    COUPLE_PRIORITY = list(COUPLE_PRIORITY)
+    SINGLE_PRIORITY = list(SINGLE_PRIORITY)
+
     def __init__(self, db: Session):
-        """Initialize room assigner with database session."""
         self.db = db
-    
+
     def assign_rooms(
-        self, 
-        bookings: List[Dict], 
+        self,
+        bookings: List[Dict],
         date: str,
         protected_booking_ids: Optional[set] = None,
         freeze_room_booking_ids: Optional[set] = None,
         overrides_by_booking: Optional[Dict[str, Any]] = None,
     ) -> List[Dict]:
         """
-        Assign rooms to bookings using greedy algorithm.
-        
+        Assign rooms to bookings by solving the whole day at once.
+
         Args:
             bookings: List of booking dicts with start_at, end_at, type, etc.
             date: Date string in YYYY-MM-DD format
-            protected_booking_ids: If set, these booking IDs must never be moved to UNASSIGNED (checked-in or finished).
-            freeze_room_booking_ids: Past (ended) or session started — treat existing DB room like manager for this pass
+            protected_booking_ids: These booking IDs must never end UNASSIGNED (checked-in or finished).
+            freeze_room_booking_ids: Past (ended) or session started — treat existing DB room like manager
                 so auto-assign does not reshuffle rooms after start. Early check-in alone should NOT be listed here.
-            
+
         Returns:
-            List of bookings with room assignments added
+            List of bookings (sorted) with room assignments added.
         """
         protected_booking_ids = protected_booking_ids or set()
         freeze_room_booking_ids = freeze_room_booking_ids or set()
         ov_map: Dict[str, Any] = overrides_by_booking if overrides_by_booking is not None else {}
-        # Get existing manual assignments (don't overwrite)
-        existing_assignments = {
+
+        locked_rows = self._load_locked_rows(date, freeze_room_booking_ids, ov_map)
+
+        sorted_bookings = sorted(bookings, key=_sort_key)
+        by_id = {b["booking_id"]: b for b in sorted_bookings}
+
+        # Locked rooms (manager / frozen / placement-override) are applied as-is.
+        for b in sorted_bookings:
+            row = locked_rows.get(b["booking_id"])
+            if row is not None:
+                b["room"] = row.room
+                b["reason"] = row.reason
+
+        # Two Square "singles", same customer + slot, notes say "couple room" → one shared double.
+        pair_groups = _find_couple_room_note_pair_groups(sorted_bookings, locked_rows)
+        pair_partner_by_primary: Dict[str, str] = {}
+        pair_member_ids: Set[str] = set()
+        for g in pair_groups:
+            ida, idb = sorted(g)
+            pair_partner_by_primary[ida] = idb
+            pair_member_ids.update((ida, idb))
+
+        # Add-on-only bookings never occupy a room (also unsticks manager rows left UNASSIGNED).
+        addon_ids: Set[str] = set()
+        for b in sorted_bookings:
+            bid = b["booking_id"]
+            if bid in pair_member_ids:
+                continue
+            row = locked_rows.get(bid)
+            if row is not None and row.room != "UNASSIGNED":
+                continue
+            if booking_is_room_neutral_addon_only((b.get("service") or "").strip()):
+                b["room"] = "ADDON"
+                b["reason"] = None
+                addon_ids.add(bid)
+                self._persist_auto_assignment(bid, "ADDON", None, date)
+
+        # Build solver input.
+        fixed_segments: List[Segment] = []
+        for b in sorted_bookings:
+            row = locked_rows.get(b["booking_id"])
+            if row is None or not row.room or row.room in ("UNASSIGNED", "ADDON"):
+                continue
+            try:
+                fixed_segments.extend(
+                    physical_busy_segments_ts({**b, "room": row.room}, ov_map.get(b["booking_id"]))
+                )
+            except Exception:
+                logger.warning("Skipping locked booking %s with unparsable times", b["booking_id"][:18])
+
+        requests: List[RoomRequest] = []
+        for b in sorted_bookings:
+            bid = b["booking_id"]
+            if bid in locked_rows or bid in addon_ids:
+                continue
+            if bid in pair_member_ids and bid not in pair_partner_by_primary:
+                continue  # secondary half: gets the primary's room below
+            solve_b = {**b, "type": "couple"} if bid in pair_partner_by_primary else b
+            try:
+                candidates = self._candidate_rooms(solve_b)
+                segments_by_room = {
+                    r: physical_busy_segments_ts({**solve_b, "room": r}, ov_map.get(bid))
+                    for r in candidates
+                }
+            except Exception:
+                b["room"] = "UNASSIGNED"
+                b["reason"] = "Invalid start/end time"
+                continue
+            requests.append(
+                RoomRequest(
+                    entity_id=bid,
+                    candidate_rooms=candidates,
+                    segments_by_room=segments_by_room,
+                    unassigned_cost=self._unassigned_cost(solve_b, bid in protected_booking_ids),
+                )
+            )
+
+        assignment = solve_day(requests, fixed_segments)
+
+        # Occupancy of the final layout (for human-readable UNASSIGNED reasons).
+        final_segments = list(fixed_segments)
+        for req in requests:
+            room = assignment.get(req.entity_id)
+            if room:
+                final_segments.extend(req.segments_by_room.get(room, []))
+
+        for req in requests:
+            bid = req.entity_id
+            room = assignment.get(req.entity_id)
+            targets = [by_id[bid]]
+            partner_id = pair_partner_by_primary.get(bid)
+            if partner_id and partner_id in by_id:
+                targets.append(by_id[partner_id])
+            if room:
+                for tb in targets:
+                    tb["room"] = room
+                    tb["reason"] = None
+                    self._persist_auto_assignment(tb["booking_id"], room, None, date)
+                if partner_id:
+                    logger.info(
+                        "Couple-room note pair: %s + %s → shared %s",
+                        bid[:14], partner_id[:14], room,
+                    )
+            else:
+                reason = self._unassigned_reason(req, final_segments)
+                for tb in targets:
+                    tb["room"] = "UNASSIGNED"
+                    tb["reason"] = reason
+                    self._delete_stale_auto_row(tb["booking_id"])
+                logger.warning(
+                    "No room for booking %s (type: %s): %s",
+                    bid[:20], by_id[bid].get("type", "single"), reason,
+                )
+
+        self.db.commit()
+
+        self._log_physical_conflicts(sorted_bookings, ov_map, pair_partner_by_primary)
+
+        unassigned_count = sum(1 for b in sorted_bookings if b.get("room") == "UNASSIGNED")
+        if unassigned_count:
+            logger.warning(
+                "Room assignment for %s finished with %d unassigned booking(s) — day is over capacity "
+                "for those slots (solver proof: no feasible layout assigns them).",
+                date, unassigned_count,
+            )
+        return sorted_bookings
+
+    # ------------------------------------------------------------------ input
+
+    def _load_locked_rows(
+        self,
+        date: str,
+        freeze_room_booking_ids: set,
+        ov_map: Dict[str, Any],
+    ) -> Dict[str, RoomAssignment]:
+        """Manager rows + frozen (started/past) auto rooms + manager placement overrides."""
+        locked = {
             row.booking_id: row
             for row in self.db.query(RoomAssignment).filter(
                 RoomAssignment.date == date,
-                RoomAssignment.assigned_by == 'manager'
+                RoomAssignment.assigned_by == "manager",
             ).all()
         }
-        # Preserve DB room past/started only (not early check-in) so future appointments can still be re-optimized
-        if freeze_room_booking_ids:
-            for bid in freeze_room_booking_ids:
-                if bid in existing_assignments:
-                    continue
-                row = self.db.query(RoomAssignment).filter(
-                    RoomAssignment.date == date,
-                    RoomAssignment.booking_id == bid,
-                ).first()
-                if row and row.room and row.room != 'UNASSIGNED':
-                    existing_assignments[bid] = row
-
-        # Manager + frozen rooms: never move these in the rebalance pass below.
-        room_locked_booking_ids = set(existing_assignments.keys())
-        
-        # Per-room booked intervals (start_ts, end_ts). A single scalar "busy until" is wrong when a
-        # later manual booking (e.g. 5pm in Rm 6) is applied in the first pass before auto-assign runs:
-        # it would make Rm 6 look busy all day for earlier starts. Intervals fix that.
-        room_intervals: Dict[str, List[Tuple[float, float]]] = {k: [] for k in _ROOM_OCCUPANCY_KEYS}
-        
-        # Sort bookings by start time, then by duration descending (longest first)
-        # So at 6 PM: 90-min single gets first pick → single-only room (1,3,4); 60-min singles get 2,0,6,5 → couples room 6 free at 7 PM
-        def get_start_time(booking):
-            start_str = booking['start_at']
-            if start_str.endswith('Z'):
-                start_str = start_str.replace('Z', '+00:00')
-            return datetime.fromisoformat(start_str)
-        
-        def get_duration_minutes(booking):
-            start_str = booking['start_at']
-            end_str = booking['end_at']
-            if start_str.endswith('Z'):
-                start_str = start_str.replace('Z', '+00:00')
-            if end_str.endswith('Z'):
-                end_str = end_str.replace('Z', '+00:00')
-            try:
-                s = datetime.fromisoformat(start_str)
-                e = datetime.fromisoformat(end_str)
-                return int((e - s).total_seconds() / 60)
-            except Exception:
-                return 0
-        
-        sorted_bookings = sorted(
-            bookings,
-            key=lambda b: (get_start_time(b), -get_duration_minutes(b))
-        )
-        
-        # IMPORTANT: First pass - apply all manual assignments and mark rooms as busy
-        # This ensures manual assignments are respected and rooms are properly blocked
-        # Also validate that manual assignments don't conflict with each other
-        import logging
-        logger = logging.getLogger(__name__)
-        
-        # Validate manual assignments don't conflict with each other
-        manual_conflicts = []
-        for i, booking1 in enumerate(sorted_bookings):
-            booking1_id = booking1['booking_id']
-            if booking1_id not in existing_assignments:
+        for bid in freeze_room_booking_ids:
+            if bid in locked:
                 continue
-            
-            room1 = existing_assignments[booking1_id].room
-            if room1 == 'UNASSIGNED':
+            row = self.db.query(RoomAssignment).filter(
+                RoomAssignment.date == date,
+                RoomAssignment.booking_id == bid,
+            ).first()
+            if row and row.room and row.room != "UNASSIGNED":
+                locked[bid] = row
+        # Manager confirmed placement despite calendar occupancy — never re-solve it.
+        for bid, ov in ov_map.items():
+            if bid in locked or not getattr(ov, "room_placement_override", False):
                 continue
-            
-            start1 = get_start_time(booking1)
-            end1 = datetime.fromisoformat(booking1['end_at'].replace('Z', '+00:00') if booking1['end_at'].endswith('Z') else booking1['end_at'])
-            
-            # Check against other manual assignments
-            for booking2 in sorted_bookings[i+1:]:
-                booking2_id = booking2['booking_id']
-                if booking2_id not in existing_assignments:
-                    continue
-                
-                room2 = existing_assignments[booking2_id].room
-                if room2 == 'UNASSIGNED':
-                    continue
-                
-                segs1 = physical_busy_segments_ts({**booking1, "room": room1}, ov_map.get(booking1_id))
-                segs2 = physical_busy_segments_ts({**booking2, "room": room2}, ov_map.get(booking2_id))
-                clash = False
-                for r1, t1a, t1b in segs1:
-                    for r2, t2a, t2b in segs2:
-                        if r1 != r2:
-                            continue
-                        if _intervals_overlap(t1a, t1b, t2a, t2b):
-                            clash = True
-                            break
-                    if clash:
-                        break
-                if clash:
-                    manual_conflicts.append({
-                        'booking1_id': booking1_id,
-                        'booking2_id': booking2_id,
-                        'room': room1,
-                        'time1': f"{start1} - {end1}",
-                        'time2': f"{get_start_time(booking2)} - {datetime.fromisoformat(booking2['end_at'].replace('Z', '+00:00') if booking2['end_at'].endswith('Z') else booking2['end_at'])}"
-                    })
-        
-        if manual_conflicts:
-            conflict_msg = "; ".join([
-                f"Bookings {c['booking1_id'][:10]}... and {c['booking2_id'][:10]}... both use room {c['room']} at overlapping times ({c['time1']} vs {c['time2']})"
-                for c in manual_conflicts
-            ])
-            logger.error(f"Manual assignment conflicts detected for {date}: {conflict_msg}")
-            # Don't raise error - just log it, as we still want to proceed with assignment
-        
-        # Apply manual assignments and mark rooms as busy
-        for booking in sorted_bookings:
-            booking_id = booking['booking_id']
-            
-            # Check if there's a manual assignment
-            if booking_id in existing_assignments:
-                existing = existing_assignments[booking_id]
-                booking['room'] = existing.room
-                booking['reason'] = existing.reason
-                # Mark room as busy BEFORE auto-assigning others (skip UNASSIGNED)
-                if existing.room != 'UNASSIGNED':
-                    self._mark_room_busy(
-                        existing.room,
-                        booking,
-                        room_intervals,
-                        ov_map.get(booking_id),
-                    )
-        
-        # Second pass - assign rooms for bookings without manual assignments
-        import logging
-        logger = logging.getLogger(__name__)
+            row = self.db.query(RoomAssignment).filter(
+                RoomAssignment.date == date,
+                RoomAssignment.booking_id == bid,
+            ).first()
+            if row and row.room and row.room != "UNASSIGNED":
+                locked[bid] = row
+        return locked
 
-        # Bounds of every couple appointment (manual + auto) for single-room lookahead
-        couple_time_bounds: List[Tuple[float, float]] = [
-            self._booking_time_bounds(b)
-            for b in sorted_bookings
-            if (b.get('type') or 'single') == 'couple'
-        ]
-
-        # Two Square "single" appts, same customer + same slot, notes say "couple room" → one shared double (5/6/02D).
-        pair_groups = _find_couple_room_note_pair_groups(sorted_bookings, existing_assignments)
-        pair_group_by_id: Dict[str, frozenset] = {}
-        pair_auto_assigned: Set[str] = set()
-        for g in pair_groups:
-            for bid in g:
-                pair_group_by_id[bid] = g
-
-        for g in pair_groups:
-            ids = tuple(g)
-            ida, idb = ids[0], ids[1]
-            primary_id = min(ida, idb)
-            secondary_id = idb if primary_id == ida else ida
-            b_primary = next(x for x in sorted_bookings if x["booking_id"] == primary_id)
-            b_secondary = next(x for x in sorted_bookings if x["booking_id"] == secondary_id)
-            fake_couple = {**b_primary, "type": "couple"}
-            room, reason = self._find_available_room(
-                fake_couple,
-                room_intervals,
-                couple_time_bounds=couple_time_bounds,
+    @staticmethod
+    def _candidate_rooms(booking: Dict) -> List[str]:
+        if (booking.get("type") or "single") == "couple":
+            return list(COUPLE_PRIORITY)
+        if booking_requires_back_walking_bar_room(booking):
+            return _single_room_order_deprioritize_room3_for_facial(
+                booking, list(BACK_WALKING_BAR_ROOMS)
             )
-            b_primary["room"] = room
-            b_secondary["room"] = room
-            b_primary["reason"] = reason
-            b_secondary["reason"] = reason
-            if room != "UNASSIGNED":
-                self._mark_room_busy(room, b_primary, room_intervals, ov_map.get(primary_id))
-                self._persist_auto_assignment(primary_id, room, reason, date)
-                self._persist_auto_assignment(secondary_id, room, reason, date)
-                logger.info(
-                    "Couple-room note pair: %s + %s → shared %s",
-                    primary_id[:14],
-                    secondary_id[:14],
-                    room,
+        return _single_room_order_deprioritize_room3_for_facial(booking, list(SINGLE_PRIORITY))
+
+    @staticmethod
+    def _unassigned_cost(booking: Dict, is_protected: bool) -> int:
+        """Higher-value bookings are kept assigned first when the day is over capacity."""
+        cost = 1_000_000 + 1_000 * _booking_duration_minutes(booking)
+        if (booking.get("type") or "single") == "couple":
+            cost += 1_000_000
+        if is_protected:
+            cost += 1_000_000_000  # checked-in / finished: unassign only if physically impossible
+        return cost
+
+    # ----------------------------------------------------------------- output
+
+    def _unassigned_reason(self, req: RoomRequest, occupied: List[Segment]) -> str:
+        parts = []
+        for room in req.candidate_rooms:
+            latest = None
+            for phys, s0, s1 in req.segments_by_room.get(room, []):
+                for op, o0, o1 in occupied:
+                    if op == phys and _intervals_overlap(s0, s1, o0, o1):
+                        latest = o1 if latest is None else max(latest, o1)
+            if latest is not None:
+                parts.append(
+                    f"Room {room} blocked until {datetime.fromtimestamp(latest).strftime('%H:%M')}"
                 )
             else:
-                self._persist_auto_assignment(primary_id, room, reason, date)
-                self._persist_auto_assignment(secondary_id, room, reason, date)
-            pair_auto_assigned.add(primary_id)
-            pair_auto_assigned.add(secondary_id)
-        
-        for booking in sorted_bookings:
-            booking_id = booking['booking_id']
-            
-            # Skip if already assigned a physical / virtual room (manager or frozen auto).
-            # Exception: DB row UNASSIGNED + add-on-only service → assign ADDON below (fixes stuck oil rows).
-            if booking_id in existing_assignments:
-                ex_row = existing_assignments[booking_id]
-                if ex_row.room != "UNASSIGNED":
-                    continue
-                if not booking_is_room_neutral_addon_only((booking.get("service") or "").strip()):
-                    continue
-            if booking_id in pair_auto_assigned:
-                continue
-
-            if booking_is_room_neutral_addon_only((booking.get("service") or "").strip()):
-                booking["room"] = "ADDON"
-                booking["reason"] = None
-                self._persist_auto_assignment(booking_id, "ADDON", None, date)
-                continue
-            
-            # Try to assign room automatically
-            room, reason = self._find_available_room(
-                booking,
-                room_intervals,
-                couple_time_bounds=couple_time_bounds,
-            )
-            
-            booking['room'] = room
-            booking['reason'] = reason
-            
-            if room == 'UNASSIGNED':
-                start_time = get_start_time(booking)
-                logger.warning(
-                    f"Could not assign room for booking {booking_id[:20]}... "
-                    f"(type: {booking.get('type', 'single')}, "
-                    f"time: {start_time}, reason: {reason})"
-                )
-                st = start_time.timestamp()
-                et = _parse_iso_timestamp(booking["end_at"])
-                busy_state_str = ", ".join(
-                    f"Room {r}: {len(iv)} block(s)"
-                    for r, iv in sorted(room_intervals.items())
-                )
-                logger.warning(f"  Occupancy at {start_time.strftime('%H:%M')}: {busy_state_str}")
-                if self._room_free_for_interval(room_intervals, "5", st, et):
-                    logger.error(
-                        "  ⚠ CRITICAL BUG: Room 5 has no overlap with this slot but booking was UNASSIGNED — "
-                        "check _find_available_room couple/single logic"
-                    )
-                
-                # Don't mark UNASSIGNED as busy - it doesn't block any room
-                continue
-            
-            # Mark room as busy
-            self._mark_room_busy(room, booking, room_intervals, ov_map.get(booking_id))
-            
-            self._persist_auto_assignment(booking_id, room, reason, date)
-        
-        # Greedy pass can leave a later couple UNASSIGNED while singles sit in 5/6. Try moving one
-        # auto-assigned single into 1,3,4,2,0 only to free a double room for that couple.
-        for _ in range(32):
-            if not self._rebalance_one_unassigned_couple(
-                sorted_bookings,
-                room_locked_booking_ids,
-                protected_booking_ids,
-                ov_map,
-                date,
-            ):
-                break
-
-        unassigned_count = sum(1 for b in sorted_bookings if b.get('room') == 'UNASSIGNED')
-        
-        self.db.commit()
-        
-        if unassigned_count > 0:
-            logger.warning(
-                f"Room assignment completed with {unassigned_count} unassigned bookings for {date}. "
-                f"This may indicate a capacity issue or algorithm problem."
-            )
-        
-        # Validate: Check for room conflicts (overbooking) on physical rooms
-        # Check for overlaps on each physical room (02D may split: 0 free during facial)
-        conflicts = []
-        phys_intervals: Dict[str, List[Tuple[float, float, str]]] = {k: [] for k in _ROOM_OCCUPANCY_KEYS}
-        for b in sorted_bookings:
-            b_room = b.get('room')
-            if not b_room or b_room == 'UNASSIGNED':
-                continue
-            for phys_r, stf, etf in physical_busy_segments_ts({**b, "room": b_room}, ov_map.get(b['booking_id'])):
-                if phys_r in phys_intervals:
-                    phys_intervals[phys_r].append((stf, etf, b['booking_id']))
-        for r, ivals in phys_intervals.items():
-            for i, (s1, e1, id1) in enumerate(ivals):
-                for s2, e2, id2 in ivals[i + 1 :]:
-                    if id1 == id2:
-                        continue
-                    if _intervals_overlap(s1, e1, s2, e2):
-                        g1 = pair_group_by_id.get(id1)
-                        g2 = pair_group_by_id.get(id2)
-                        if g1 is not None and g1 == g2:
-                            continue
-                        conflicts.append({
-                            'room': r,
-                            'booking1': id1,
-                            'booking2': id2,
-                            'time1': f"{s1}-{e1}",
-                            'time2': f"{s2}-{e2}",
-                        })
-        
-        if conflicts:
-            logger.warning(f"Room assignment conflicts detected for {date}:")
-            for conflict in conflicts:
-                logger.warning(f"  Room {conflict['room']} overbooked: {conflict['booking1'][:20]}... and {conflict['booking2'][:20]}...")
-                logger.warning(f"    Times: {conflict['time1']} vs {conflict['time2']}")
-
-                bid_a, bid_b = conflict["booking1"], conflict["booking2"]
-                oa = ov_map.get(bid_a)
-                ob = ov_map.get(bid_b)
-                if (oa and getattr(oa, "room_placement_override", False)) or (
-                    ob and getattr(ob, "room_placement_override", False)
-                ):
-                    # Manager confirmed placement despite calendar occupancy; do not delete either assignment
-                    # or the next get_day will re–auto-assign (e.g. couple back to Rm 5) while OVR stays set.
-                    logger.info(
-                        "  Skipping conflict cleanup: room_placement_override on one booking (%s vs %s)",
-                        bid_a[:16],
-                        bid_b[:16],
-                    )
-                    continue
-                
-                # Fix conflicts: Manager assignments have priority
-                # If one is manager-assigned and the other is auto-assigned, unassign the auto one
-                b1 = next((b for b in sorted_bookings if b['booking_id'] == conflict['booking1']), None)
-                b2 = next((b for b in sorted_bookings if b['booking_id'] == conflict['booking2']), None)
-                
-                if b1 and b2:
-                    # Check assignment types
-                    b1_assignment = self.db.query(RoomAssignment).filter(
-                        RoomAssignment.booking_id == conflict['booking1']
-                    ).first()
-                    b2_assignment = self.db.query(RoomAssignment).filter(
-                        RoomAssignment.booking_id == conflict['booking2']
-                    ).first()
-                    
-                    b1_is_manager = b1_assignment and b1_assignment.assigned_by == 'manager'
-                    b2_is_manager = b2_assignment and b2_assignment.assigned_by == 'manager'
-                    b1_protected = conflict['booking1'] in protected_booking_ids
-                    b2_protected = conflict['booking2'] in protected_booking_ids
-                    
-                    # Both manager-placed: never auto-unassign one. Swaps and manual doubles often overlap
-                    # physically until the second move; GET /api/day re-runs assign_rooms and used to delete
-                    # the "second" booking here, so the UI looked like changes "reverted".
-                    if b1_is_manager and b2_is_manager:
-                        logger.info(
-                            "  Skipping conflict cleanup: both bookings are manager-assigned (%s vs %s)",
-                            conflict['booking1'][:16],
-                            conflict['booking2'][:16],
-                        )
-                        continue
-                    
-                    # Choose victim: manager > auto; if both auto, unassign b2. NEVER unassign protected (checked-in or finished).
-                    if b1_is_manager:
-                        victim_b, victim_assignment, victim_booking_id = b2, b2_assignment, conflict['booking2']
-                    elif b2_is_manager:
-                        victim_b, victim_assignment, victim_booking_id = b1, b1_assignment, conflict['booking1']
-                    else:
-                        victim_b, victim_assignment, victim_booking_id = b2, b2_assignment, conflict['booking2']
-                    
-                    if victim_booking_id in protected_booking_ids:
-                        victim_b, victim_assignment, victim_booking_id = (b1, b1_assignment, conflict['booking1']) if victim_booking_id == conflict['booking2'] else (b2, b2_assignment, conflict['booking2'])
-                    if victim_booking_id in protected_booking_ids:
-                        logger.error(f"  Both bookings are protected (checked-in or finished); cannot unassign either. Conflict left unresolved.")
-                        continue
-                    
-                    keeper_id = conflict['booking2'] if victim_booking_id == conflict['booking1'] else conflict['booking1']
-                    logger.info(f"  Resolving conflict: keeping {keeper_id[:20]}..., unassigning {victim_booking_id[:20]}...")
-                    if victim_assignment:
-                        self.db.delete(victim_assignment)
-                    victim_b['room'] = 'UNASSIGNED'
-                    victim_b['reason'] = f"Conflict with booking {keeper_id[:20]}..."
-            
-            self.db.commit()
-
-        # Conflict cleanup can unassign the "auto" side even when other single rooms are still free
-        # (e.g. false overlap on one physical key while 1/3/4/2/0 remain open). Re-try placement from
-        # a fresh occupancy map so victims land in a real free room when one exists.
-        self._repair_unassigned_bookings_after_conflicts(
-            sorted_bookings,
-            room_locked_booking_ids,
-            protected_booking_ids,
-            pair_auto_assigned,
-            ov_map,
-            date,
-            couple_time_bounds,
-        )
-
-        return sorted_bookings
-
-    def _repair_unassigned_bookings_after_conflicts(
-        self,
-        sorted_bookings: List[Dict],
-        room_locked_booking_ids: set,
-        protected_booking_ids: set,
-        pair_auto_assigned: Set[str],
-        ov_map: Dict[str, Any],
-        date: str,
-        couple_time_bounds: List[Tuple[float, float]],
-    ) -> None:
-        """Re-run auto room pick for UNASSIGNED bookings after conflict resolution."""
-        import logging
-
-        logger = logging.getLogger(__name__)
-
-        def build_ri() -> Dict[str, List[Tuple[float, float]]]:
-            ri: Dict[str, List[Tuple[float, float]]] = {k: [] for k in _ROOM_OCCUPANCY_KEYS}
-            for b in sorted_bookings:
-                r = b.get("room")
-                if not r or r in ("UNASSIGNED", "ADDON"):
-                    continue
-                self._mark_room_busy(r, b, ri, ov_map.get(b["booking_id"]))
-            return ri
-
-        ri = build_ri()
-        candidates = [
-            b
-            for b in sorted_bookings
-            if b.get("room") == "UNASSIGNED"
-            and b["booking_id"] not in room_locked_booking_ids
-            and b["booking_id"] not in protected_booking_ids
-            and b["booking_id"] not in pair_auto_assigned
-            and not booking_is_room_neutral_addon_only((b.get("service") or "").strip())
-            and not (
-                ov_map.get(b["booking_id"])
-                and getattr(ov_map[b["booking_id"]], "room_placement_override", False)
-            )
-            and (b.get("type") or "single") in ("single", "couple")
-        ]
-        candidates.sort(key=self._booking_time_bounds)
-        repaired = False
-        for b in candidates:
-            room, reason = self._find_available_room(
-                b, ri, couple_time_bounds=couple_time_bounds
-            )
-            if room == "UNASSIGNED":
-                continue
-            b["room"] = room
-            b["reason"] = reason
-            self._mark_room_busy(room, b, ri, ov_map.get(b["booking_id"]))
-            self._persist_auto_assignment(b["booking_id"], room, reason, date)
-            repaired = True
-            logger.info(
-                "Repair after conflicts: booking %s → room %s",
-                b["booking_id"][:18],
-                room,
-            )
-        if repaired:
-            try:
-                self.db.commit()
-            except Exception:
-                self.db.rollback()
-                raise
-
-    @staticmethod
-    def _room_free_for_interval(
-        room_intervals: Dict[str, List[Tuple[float, float]]],
-        room: str,
-        start_ts: float,
-        end_ts: float,
-    ) -> bool:
-        for s, e in room_intervals.get(room, []):
-            if _intervals_overlap(s, e, start_ts, end_ts):
-                return False
-        return True
-
-    @staticmethod
-    def _blocking_interval_end(
-        room_intervals: Dict[str, List[Tuple[float, float]]],
-        room: str,
-        start_ts: float,
-        end_ts: float,
-    ) -> Optional[float]:
-        """Latest end time among intervals on room that overlap [start_ts, end_ts)."""
-        latest = None
-        for s, e in room_intervals.get(room, []):
-            if _intervals_overlap(s, e, start_ts, end_ts):
-                latest = e if latest is None else max(latest, e)
-        return latest
+                parts.append(f"Room {room} blocked for this slot")
+        if req.candidate_rooms == list(COUPLE_PRIORITY):
+            return f"No double room available. {'; '.join(parts)}"
+        if set(req.candidate_rooms) <= set(BACK_WALKING_BAR_ROOMS):
+            return f"No bar room (Rm 1, 3, or 4) free for back walking. {'; '.join(parts)}"
+        return f"No room available. {'; '.join(parts)}"
 
     def _room_assignment_row_for_booking(self, booking_id: str) -> Optional[RoomAssignment]:
         """DB row or pending RoomAssignment in this session (get() alone can miss session.new in some cases)."""
@@ -884,479 +619,51 @@ class RoomAssigner:
                 RoomAssignment(
                     booking_id=booking_id,
                     room=room,
-                    assigned_by='auto',
+                    assigned_by="auto",
                     date=date,
                     reason=reason,
                 )
             )
-        elif existing.assigned_by == 'auto':
+        elif existing.assigned_by == "auto":
             existing.room = room
             existing.reason = reason
             existing.date = date
             existing.updated_at = datetime.now()
 
-    @staticmethod
-    def _booking_time_bounds(booking: Dict) -> Tuple[float, float]:
-        start_str = booking['start_at']
-        end_str = booking['end_at']
-        if start_str.endswith('Z'):
-            start_str = start_str.replace('Z', '+00:00')
-        if end_str.endswith('Z'):
-            end_str = end_str.replace('Z', '+00:00')
-        s = datetime.fromisoformat(start_str).timestamp()
-        e = datetime.fromisoformat(end_str).timestamp()
-        return s, e
+    def _delete_stale_auto_row(self, booking_id: str) -> None:
+        """Booking ended UNASSIGNED: remove any leftover auto row so the DB matches the calendar."""
+        row = self._room_assignment_row_for_booking(booking_id)
+        if row is not None and row.assigned_by == "auto":
+            self.db.delete(row)
 
-    @staticmethod
-    def _intervals_overlap_bookings(a: Dict, b: Dict) -> bool:
-        a0, a1 = RoomAssigner._booking_time_bounds(a)
-        b0, b1 = RoomAssigner._booking_time_bounds(b)
-        return _intervals_overlap(a0, a1, b0, b1)
-
-    @staticmethod
-    def _booking_duration_minutes(booking: Dict) -> int:
-        try:
-            a0, a1 = RoomAssigner._booking_time_bounds(booking)
-            return max(0, int(round((a1 - a0) / 60.0)))
-        except Exception:
-            return 0
-
-    def _build_occupancy_intervals_excluding_set(
-        self,
-        bookings: List[Dict],
-        exclude_booking_ids: set,
-        ov_map: Dict[str, Any],
-    ) -> Dict[str, List[Tuple[float, float]]]:
-        ri: Dict[str, List[Tuple[float, float]]] = {k: [] for k in _ROOM_OCCUPANCY_KEYS}
-        for b in bookings:
-            if b['booking_id'] in exclude_booking_ids:
-                continue
-            r = b.get('room')
-            if not r or r == 'UNASSIGNED':
-                continue
-            self._mark_room_busy(r, b, ri, ov_map.get(b['booking_id']))
-        return ri
-
-    def _build_occupancy_intervals_excluding(
-        self,
-        bookings: List[Dict],
-        exclude_booking_id: str,
-        ov_map: Dict[str, Any],
-    ) -> Dict[str, List[Tuple[float, float]]]:
-        return self._build_occupancy_intervals_excluding_set(bookings, {exclude_booking_id}, ov_map)
-
-    def _find_available_room_for_single_priority(
-        self,
-        booking: Dict,
-        room_intervals: Dict[str, List[Tuple[float, float]]],
-        room_order: List[str],
-    ) -> Tuple[str, Optional[str]]:
-        start_str = booking['start_at']
-        end_str = booking['end_at']
-        if start_str.endswith('Z'):
-            start_str = start_str.replace('Z', '+00:00')
-        if end_str.endswith('Z'):
-            end_str = end_str.replace('Z', '+00:00')
-        start_ts = datetime.fromisoformat(start_str).timestamp()
-        end_ts = datetime.fromisoformat(end_str).timestamp()
-        for room in room_order:
-            if self._room_free_for_interval(room_intervals, room, start_ts, end_ts):
-                return room, None
-        return 'UNASSIGNED', 'No single/convertible room free for this slot'
-
-    def _movable_for_rebalance(
-        self,
-        b: Dict,
-        room_locked_booking_ids: set,
-        protected_booking_ids: set,
-        ov_map: Dict[str, Any],
-    ) -> bool:
-        bid = b['booking_id']
-        if bid in room_locked_booking_ids or bid in protected_booking_ids:
-            return False
-        ov = ov_map.get(bid)
-        if ov and getattr(ov, 'room_placement_override', False):
-            return False
-        return True
-
-    def _rebalance_one_unassigned_couple(
+    def _log_physical_conflicts(
         self,
         sorted_bookings: List[Dict],
-        room_locked_booking_ids: set,
-        protected_booking_ids: set,
         ov_map: Dict[str, Any],
-        date: str,
-    ) -> bool:
-        """
-        If a couple booking is still UNASSIGNED, try to free Rm 5 or 6 by moving an overlapping
-        auto single into fixed/convertible singles only (1,3,4,2,0).
-
-        Also try to free merged 02D (physical 0+2): a single in Rm 0 or Rm 2 blocks the whole 02D
-        double even when Rm 5/6 are still free — move that single (e.g. 2→5) so the couple can take 02D.
-
-        Depth-2: if that single is blocked on the only free single slot by another auto single
-        (e.g. Anwar cannot take Rm 2 while Emily is still there until 3:30), move the blocker first
-        — including into the couple room if it is back-to-back with the couple (no time overlap).
-        """
-        import logging
-
-        logger = logging.getLogger(__name__)
-
-        couple = None
+        pair_partner_by_primary: Dict[str, str],
+    ) -> None:
+        """Safety net: solver output should never overlap; manager-vs-manager overlaps are kept (swaps in progress)."""
+        pair_ids = set(pair_partner_by_primary.keys()) | set(pair_partner_by_primary.values())
+        segs: List[Tuple[str, float, float, str]] = []
         for b in sorted_bookings:
-            if (b.get('type') or 'single') == 'couple' and b.get('room') == 'UNASSIGNED':
-                couple = b
-                break
-        if not couple:
-            return False
-
-        c0, c1 = self._booking_time_bounds(couple)
-
-        for double_room in ['5', '6']:
-            candidates: List[Dict] = []
-            for b in sorted_bookings:
-                if b is couple:
+            room = b.get("room")
+            if not room or room in ("UNASSIGNED", "ADDON"):
+                continue
+            try:
+                for phys, s0, s1 in physical_busy_segments_ts({**b, "room": room}, ov_map.get(b["booking_id"])):
+                    segs.append((phys, s0, s1, b["booking_id"]))
+            except Exception:
+                continue
+        for i, (r1, a0, a1, id1) in enumerate(segs):
+            for r2, b0, b1, id2 in segs[i + 1:]:
+                if r1 != r2 or id1 == id2:
                     continue
-                if (b.get('type') or 'single') == 'couple':
+                if id1 in pair_ids and pair_partner_by_primary.get(id1) == id2:
                     continue
-                if b.get('room') != double_room:
+                if id2 in pair_ids and pair_partner_by_primary.get(id2) == id1:
                     continue
-                if not self._intervals_overlap_bookings(couple, b):
-                    continue
-                if not self._movable_for_rebalance(b, room_locked_booking_ids, protected_booking_ids, ov_map):
-                    continue
-                candidates.append(b)
-
-            candidates.sort(key=self._booking_duration_minutes)
-
-            for s in candidates:
-                ri = self._build_occupancy_intervals_excluding(sorted_bookings, s['booking_id'], ov_map)
-                if not self._room_free_for_interval(ri, double_room, c0, c1):
-                    continue
-                if booking_requires_back_walking_bar_room(s):
-                    s_order = _single_room_order_deprioritize_room3_for_facial(s, ["1", "3", "4"])
-                else:
-                    s_order = _single_room_order_deprioritize_room3_for_facial(s, list(_BASE_SINGLE_PHYSICAL_ORDER))
-                new_room, new_reason = self._find_available_room_for_single_priority(s, ri, s_order)
-                if new_room == 'UNASSIGNED':
-                    continue
-
-                old = s['room']
-                s['room'] = new_room
-                s['reason'] = new_reason
-                couple['room'] = double_room
-                couple['reason'] = None
-
-                self._persist_auto_assignment(s['booking_id'], new_room, new_reason, date)
-                self._persist_auto_assignment(couple['booking_id'], double_room, None, date)
-
-                logger.info(
-                    "Rebalance: single %s %s→%s so couple %s can use %s",
-                    s['booking_id'][:18],
-                    old,
-                    new_room,
-                    couple['booking_id'][:18],
-                    double_room,
-                )
-                return True
-
-            # Depth-2 chain: move blocker off a single room so the overlapping single on 5/6 can take it,
-            # then place the couple on 5/6 (e.g. Emily 2→5 before Shawn 3:30, Anwar 5→2).
-            for s in candidates:
-                ri_b = self._build_occupancy_intervals_excluding_set(
-                    sorted_bookings, {s['booking_id']}, ov_map
-                )
-                if not self._room_free_for_interval(ri_b, double_room, c0, c1):
-                    continue
-                b0, b1 = self._booking_time_bounds(s)
-                if booking_requires_back_walking_bar_room(s):
-                    s_try_rooms = _single_room_order_deprioritize_room3_for_facial(s, ["1", "3", "4"])
-                else:
-                    s_try_rooms = _single_room_order_deprioritize_room3_for_facial(s, list(_BASE_SINGLE_PHYSICAL_ORDER))
-                for r in s_try_rooms:
-                    if self._room_free_for_interval(ri_b, r, b0, b1):
-                        continue
-                    occupiers = [
-                        e
-                        for e in sorted_bookings
-                        if e is not couple
-                        and e['booking_id'] != s['booking_id']
-                        and e.get('room') == r
-                        and (e.get('type') or 'single') != 'couple'
-                        and self._intervals_overlap_bookings(s, e)
-                        and self._movable_for_rebalance(
-                            e, room_locked_booking_ids, protected_booking_ids, ov_map
-                        )
-                    ]
-                    occupiers.sort(key=self._booking_duration_minutes)
-                    for e in occupiers:
-                        ri_be = self._build_occupancy_intervals_excluding_set(
-                            sorted_bookings, {s['booking_id'], e['booking_id']}, ov_map
-                        )
-                        if not self._room_free_for_interval(ri_be, double_room, c0, c1):
-                            continue
-                        e0, e1 = self._booking_time_bounds(e)
-                        e_singles = (
-                            ["1", "3", "4"]
-                            if booking_requires_back_walking_bar_room(e)
-                            else list(_BASE_SINGLE_PHYSICAL_ORDER)
-                        )
-                        r2_order = ["5", "6"] + _single_room_order_deprioritize_room3_for_facial(e, e_singles)
-                        for r2 in r2_order:
-                            if r2 == r:
-                                continue
-                            if r2 == double_room and self._intervals_overlap_bookings(e, couple):
-                                continue
-                            if not self._room_free_for_interval(ri_be, r2, e0, e1):
-                                continue
-                            if not self._room_free_for_interval(ri_be, r, b0, b1):
-                                continue
-                            if not self._room_free_for_interval(ri_be, double_room, c0, c1):
-                                continue
-
-                            e_old, s_old = e['room'], s['room']
-                            e['room'] = r2
-                            e['reason'] = None
-                            s['room'] = r
-                            s['reason'] = None
-                            couple['room'] = double_room
-                            couple['reason'] = None
-
-                            self._persist_auto_assignment(e['booking_id'], r2, None, date)
-                            self._persist_auto_assignment(s['booking_id'], r, None, date)
-                            self._persist_auto_assignment(couple['booking_id'], double_room, None, date)
-
-                            logger.info(
-                                "Rebalance chain: %s %s→%s, %s %s→%s, couple %s→%s",
-                                e['booking_id'][:16],
-                                e_old,
-                                r2,
-                                s['booking_id'][:16],
-                                s_old,
-                                r,
-                                couple['booking_id'][:16],
-                                double_room,
-                            )
-                            return True
-
-        # Free merged 02D: singles on physical 0 or 2 block the couple double; allow any free room
-        # including 5/6 as destinations (unlike the 5/6 rebalance above, which only frees doubles).
-        conv_candidates: List[Dict] = []
-        for b in sorted_bookings:
-            if b is couple:
-                continue
-            if (b.get("type") or "single") == "couple":
-                continue
-            if b.get("room") not in ("0", "2"):
-                continue
-            if not self._intervals_overlap_bookings(couple, b):
-                continue
-            if not self._movable_for_rebalance(b, room_locked_booking_ids, protected_booking_ids, ov_map):
-                continue
-            conv_candidates.append(b)
-        conv_candidates.sort(key=self._booking_duration_minutes)
-        for s in conv_candidates:
-            ri = self._build_occupancy_intervals_excluding(sorted_bookings, s["booking_id"], ov_map)
-            if not self._room_free_for_interval(ri, "0", c0, c1):
-                continue
-            if not self._room_free_for_interval(ri, "2", c0, c1):
-                continue
-            old = s["room"]
-            if booking_requires_back_walking_bar_room(s):
-                s_order = _single_room_order_deprioritize_room3_for_facial(s, ["1", "3", "4"])
-            else:
-                s_order = _single_room_order_deprioritize_room3_for_facial(s, list(self.SINGLE_PRIORITY))
-            s_order = [r for r in s_order if r != old]
-            if not s_order:
-                continue
-            new_room, new_reason = self._find_available_room_for_single_priority(s, ri, s_order)
-            if new_room == "UNASSIGNED":
-                continue
-            s["room"] = new_room
-            s["reason"] = new_reason
-            couple["room"] = "02D"
-            couple["reason"] = None
-            self._persist_auto_assignment(s["booking_id"], new_room, new_reason, date)
-            self._persist_auto_assignment(couple["booking_id"], "02D", None, date)
-            logger.info(
-                "Rebalance 02D: single %s %s→%s so couple %s can use 02D",
-                s["booking_id"][:18],
-                old,
-                new_room,
-                couple["booking_id"][:18],
-            )
-            return True
-
-        return False
-    
-    def _single_should_try_double_rooms_first(
-        self,
-        start_ts: float,
-        end_ts: float,
-        couple_time_bounds: List[Tuple[float, float]],
-    ) -> bool:
-        """
-        True if the earliest couple that starts at or after this single ends does so within
-        PREFER_DOUBLE_MAX_GAP_BEFORE_NEXT_COUPLE_SEC (same-day runway for back-to-back double room).
-
-        If we only required "some couple later today", a 3:30–4:30 single would still prefer 5/6
-        because of a 7pm couple, blocking a 4:00 couples appointment (Kyle) that needs Rm 5/6.
-        """
-        following_starts = [c0 for c0, _c1 in couple_time_bounds if end_ts <= c0]
-        if not following_starts:
-            return False
-        c0_min = min(following_starts)
-        gap = c0_min - end_ts
-        if gap >= self.PREFER_DOUBLE_MAX_GAP_BEFORE_NEXT_COUPLE_SEC:
-            return False
-        return True
-
-    def _find_available_room(
-        self,
-        booking: Dict,
-        room_intervals: Dict[str, List[Tuple[float, float]]],
-        couple_time_bounds: Optional[List[Tuple[float, float]]] = None,
-    ) -> Tuple[str, Optional[str]]:
-        """
-        Find an available room for a booking.
-        
-        Returns:
-            Tuple of (room, reason) where reason is None if assigned successfully
-        """
-        import logging
-        logger = logging.getLogger(__name__)
-        
-        # Parse datetime, handling both with and without timezone
-        start_str = booking['start_at']
-        end_str = booking['end_at']
-        
-        if start_str.endswith('Z'):
-            start_str = start_str.replace('Z', '+00:00')
-        if end_str.endswith('Z'):
-            end_str = end_str.replace('Z', '+00:00')
-        
-        start_dt = datetime.fromisoformat(start_str)
-        end_dt = datetime.fromisoformat(end_str)
-        start_ts = start_dt.timestamp()
-        end_ts = end_dt.timestamp()
-        
-        booking_id = booking.get('booking_id', 'unknown')[:20]
-        booking_type = booking.get('type', 'single')
-        
-        logger.debug(f"Finding room for booking {booking_id} (type: {booking_type}, time: {start_dt.strftime('%H:%M')}-{end_dt.strftime('%H:%M')})")
-        occ_dbg = ", ".join(
-            f"{r}:{len(iv)}" for r, iv in sorted(room_intervals.items()) if iv
-        )
-        logger.debug(f"Current room interval counts: {occ_dbg or 'none'}")
-
-        def is_free(room: str) -> bool:
-            """True if [start_ts, end_ts) does not overlap any booking on this room."""
-            ok = self._room_free_for_interval(room_intervals, room, start_ts, end_ts)
-            if not ok:
-                be = self._blocking_interval_end(room_intervals, room, start_ts, end_ts)
-                if be is not None:
-                    logger.debug(
-                        f"  Room {room} BUSY (conflict through {datetime.fromtimestamp(be).strftime('%H:%M')})"
+                if _intervals_overlap(a0, a1, b0, b1):
+                    logger.warning(
+                        "Physical overlap on room %s: %s vs %s (manager-locked overlap or model gap)",
+                        r1, id1[:18], id2[:18],
                     )
-            else:
-                logger.debug(f"  Room {room} FREE for this slot")
-            return ok
-
-        def can_use_02d() -> bool:
-            """Merged 02D: both physical rooms must be free for the whole slot."""
-            return is_free("0") and is_free("2")
-        
-        if booking_type == 'couple':
-            # COUPLE priority: 5 -> 6 -> 02D
-            logger.debug(f"  Checking couple rooms in priority order: 5, 6, 02D")
-            for room in ['5', '6']:
-                if is_free(room):
-                    logger.info(f"  ✓ Assigned room {room} to couple booking {booking_id}")
-                    return room, None
-            
-            # Try merged room 0+2 (HARD RULE: both must be free for entire duration)
-            # If either 0 or 2 is used by a single, 02D CANNOT be used
-            if can_use_02d():
-                logger.info(f"  ✓ Assigned room 02D to couple booking {booking_id}")
-                return '02D', None
-            
-            reasons = []
-            for label, r in [("Room 5", "5"), ("Room 6", "6"), ("Room 0", "0"), ("Room 2", "2")]:
-                if not self._room_free_for_interval(room_intervals, r, start_ts, end_ts):
-                    be = self._blocking_interval_end(room_intervals, r, start_ts, end_ts)
-                    if be is not None:
-                        reasons.append(f"{label} blocked until {datetime.fromtimestamp(be).strftime('%H:%M')}")
-                    else:
-                        reasons.append(f"{label} blocked for this slot")
-            
-            logger.warning(f"  ✗ Could not assign couple room to {booking_id}. Reasons: {'; '.join(reasons)}")
-            return 'UNASSIGNED', f"No double room available. {'; '.join(reasons)}"
-        
-        else:  # single
-            # Back walking (notes or Exclusive + back walk in service): only Rm 1, 3, 4 have bars — never 0/2/5/6.
-            # Couple massages skip this (handled in couple branch above).
-            bw_bar = booking_requires_back_walking_bar_room(booking)
-            if bw_bar:
-                room_order = _single_room_order_deprioritize_room3_for_facial(booking, ["1", "3", "4"])
-            else:
-                # Default: 1 -> 3 -> 4 -> 2 -> 0 -> 6 -> 5 (longer same-start singles grab 1,3,4 first).
-                # Lookahead: when a couple starts soon after this single ends, we may try 5 -> 6 before
-                # re-checking 1,3,4,2,0 — but ONLY if every fixed/convertible single room is already busy.
-                room_order = list(self.SINGLE_PRIORITY)
-                if couple_time_bounds and self._single_should_try_double_rooms_first(
-                    start_ts, end_ts, couple_time_bounds
-                ):
-                    single_suitable = ('1', '3', '4', '2', '0')
-                    any_single_free = any(
-                        self._room_free_for_interval(room_intervals, r, start_ts, end_ts)
-                        for r in single_suitable
-                    )
-                    if not any_single_free:
-                        room_order = ['5', '6'] + [r for r in self.SINGLE_PRIORITY if r not in ('5', '6')]
-                room_order = _single_room_order_deprioritize_room3_for_facial(booking, room_order)
-            logger.debug(f"  Checking single rooms in priority order: {', '.join(room_order)}")
-            for room in room_order:
-                if is_free(room):
-                    logger.info(f"  ✓ Assigned room {room} to single booking {booking_id}")
-                    return room, None
-            
-            # If no room available, check if 02D is blocking 0 and 2
-            # If so, we might be able to use 6 or 5 (but they're already checked)
-            # Build detailed reason
-            reasons = []
-            for room in room_order:
-                if not is_free(room):
-                    be = self._blocking_interval_end(room_intervals, room, start_ts, end_ts)
-                    if be is not None:
-                        reasons.append(f"Room {room} blocked until {datetime.fromtimestamp(be).strftime('%H:%M')}")
-                    else:
-                        reasons.append(f"Room {room} blocked for this slot")
-
-            logger.warning(f"  ✗ Could not assign single room to {booking_id}. Reasons: {'; '.join(reasons)}")
-            if bw_bar:
-                return (
-                    "UNASSIGNED",
-                    f"No bar room (Rm 1, 3, or 4) free for back walking. {'; '.join(reasons)}",
-                )
-            if self._room_free_for_interval(room_intervals, "5", start_ts, end_ts):
-                logger.error(
-                    f"  ⚠ BUG DETECTED: Room 5 is free for this slot but was not assigned "
-                    f"({start_dt.strftime('%H:%M')}-{end_dt.strftime('%H:%M')})"
-                )
-                logger.error(f"  🔧 FIXING: Assigning room 5 to {booking_id}")
-                return "5", "Room 5 was available but not checked properly - fixed"
-            return 'UNASSIGNED', f"No room available. {'; '.join(reasons)}"
-    
-    def _mark_room_busy(
-        self,
-        room: str,
-        booking: Dict,
-        room_intervals: Dict[str, List[Tuple[float, float]]],
-        ov: Any = None,
-    ):
-        """Record occupancy on physical room(s); 02D uses split intervals when couple single-facial override is set."""
-        bseg = {**booking, "room": room}
-        for phys_r, stf, etf in physical_busy_segments_ts(bseg, ov):
-            if phys_r in room_intervals:
-                room_intervals[phys_r].append((stf, etf))
-

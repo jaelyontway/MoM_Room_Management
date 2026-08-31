@@ -76,7 +76,8 @@ class Event(BaseModel):
     pressure_2: Optional[str] = None  # for couple: pressure for second masseuse
     focus_area_2: Optional[str] = None  # for couple: focus areas for second masseuse
     split_minutes_first: Optional[int] = None  # single with 2 SRMs: minutes first therapist did (for prorate)
-    # Minutes Square adds for aromatherapy / pain relief oil add-ons (not massage time). UI subtracts from duration display.
+    # Extra Square minutes beyond advertised/standard massage length (catalog padding / bundled cupping).
+    # Pain relief oil indicated on the booking is not extra clock time — do not subtract for that flag.
     addon_time_neutral_minutes: Optional[int] = None
     # Calendar end can differ from Square when staff corrects a wrong Square block (see duration_adjust_minutes).
     square_end_at: Optional[str] = None  # ISO end from Square before adjustment; for "Original (Square)" time row

@@ -372,44 +372,18 @@ def _addon_time_neutral_minutes(
     service: Optional[str], combined_notes: Optional[str], duration_min: Optional[int] = None
 ) -> int:
     """
-    Minutes Square often adds for aromatherapy / pain relief / scent add-ons that are not extra *massage* time.
-    We treat them as add-ons only: subtract from displayed duration, checkout slot time, and calendar labels.
-    Room assignment uses end_at after subtracting this neutral window (see _booking_dict_for_assignment).
+    Extra Square minutes that are not extra *massage* clock time (room + calendar end).
 
-    combined_notes: merge of addon_note, seller_note, customer_note (lavender / cream often live in notes only).
-    Rose-as-scent is detected only on the catalog service line so a therapist named Rose in notes does not count.
+    Pain relief oil/cream and aromatherapy are used *during* the massage. Square already drops
+    those add-on segments when building end_at. Do **not** subtract 5/10 just because notes or
+    the service line say "pain relief oil" — that wrongly shortens a 5:30 massage to 5:20.
 
-    Also: when the service title advertises N minutes (e.g. '90 minute 3 Senses') but the booked
-    block is exactly N+5 or N+10, treat the excess as neutral (common Square catalog padding).
+    Only peel time when the booked block is actually longer than the advertised or standard
+    massage length (N+5 / N+10 catalog padding, or cupping bundled inside the massage).
 
-    Cupping (e.g. Air Cupping) is often a separate Square segment with its own minutes even when done
-    inside the massage; if the block is longer than the advertised massage length by 5–60 min and the
-    title mentions cupping + massage, treat that excess as neutral so the room frees for the real massage end.
+    combined_notes: merge of addon_note, seller_note, customer_note.
     """
     text = f"{service or ''} {combined_notes or ''}".lower()
-    has_pain_phrase = "pain relief" in text or "pain-relief" in text
-    # "Pain relief cream" split across fields, or "cream" with pain context
-    has_pain_cream = "cream" in text and ("pain" in text or "relief" in text)
-    has_pain = has_pain_phrase or has_pain_cream
-    has_aroma_word = "aromatherapy" in text or "aroma therapy" in text
-    # Common Square phrasing: "Swedish Massage, Lavender" (scent = aromatherapy add-on)
-    has_lavender_scent = "lavender" in text and (
-        "massage" in text or "swedish" in text or "deep" in text or "tissue" in text or "couple" in text
-    )
-    # Rose scent only on the catalog service line — "Rose" in desk notes is often a therapist name, not aroma.
-    svc_l = (service or "").lower()
-    has_rose_scent = bool(re.search(r"\brose\b", svc_l, re.I)) and (
-        "massage" in svc_l
-        or "swedish" in svc_l
-        or "deep" in svc_l
-        or "tissue" in svc_l
-        or "couple" in svc_l
-    )
-    has_aroma = has_aroma_word or has_lavender_scent or has_rose_scent
-    if has_pain and has_aroma:
-        return 10
-    if has_pain or has_aroma:
-        return 5
     if duration_min is not None and duration_min > 0:
         has_cupping = "cupping" in text or bool(
             re.search(r"\bair\s+cup", text, re.I)
@@ -964,6 +938,45 @@ def get_square_service():
             logger.warning(f"Could not re-initialize Square service: {e}")
     
     return square_service
+
+
+# ── Couple autoblock (M10): background poller + status endpoint ──
+# Auto-blocks the second therapist in Square for couples massages. Dry-run by default
+# (set COUPLE_AUTOBLOCK_DRY_RUN=false in .env to enable real writes).
+
+async def _couple_autoblock_loop():
+    import asyncio
+    from app import couple_autoblock
+    interval = max(1, Config.COUPLE_AUTOBLOCK_POLL_MINUTES) * 60
+    logger.info(
+        "Couple autoblock poller started (every %s min, dry_run=%s, lookahead=%s days)",
+        Config.COUPLE_AUTOBLOCK_POLL_MINUTES, Config.COUPLE_AUTOBLOCK_DRY_RUN,
+        Config.COUPLE_AUTOBLOCK_LOOKAHEAD_DAYS,
+    )
+    while True:
+        try:
+            svc = get_square_service()
+            if svc.client:
+                await asyncio.to_thread(couple_autoblock.run_once, svc)
+        except Exception as e:
+            logger.warning("Couple autoblock poll error: %s", e)
+        await asyncio.sleep(interval)
+
+
+@app.on_event("startup")
+async def _start_couple_autoblock():
+    import asyncio
+    if Config.COUPLE_AUTOBLOCK_ENABLED:
+        asyncio.create_task(_couple_autoblock_loop())
+    else:
+        logger.info("Couple autoblock disabled (COUPLE_AUTOBLOCK_ENABLED=false)")
+
+
+@app.get("/api/couple-autoblock/status")
+async def couple_autoblock_status():
+    """Config, last poll summary (incl. dry-run plans), and active second-therapist blocks."""
+    from app import couple_autoblock
+    return couple_autoblock.get_status()
 
 
 @app.get("/api/status")

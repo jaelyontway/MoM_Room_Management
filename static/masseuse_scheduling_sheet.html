@@ -49,11 +49,17 @@
             gap: 6px;
         }
         .mss-controls label { font-weight: 600; font-size: 13px; }
-        .mss-controls input[type="date"] {
+        .mss-controls input[type="date"],
+        .mss-controls input.mss-roster-input {
             padding: 6px 8px;
             border: 1px solid #ced4da;
             border-radius: 4px;
             font-size: 14px;
+        }
+        .mss-roster-input {
+            min-width: 200px;
+            flex: 1 1 280px;
+            max-width: 560px;
         }
         .mss-controls button,
         .mss-controls a.mss-btn {
@@ -208,6 +214,24 @@
         }
         .mss-card-title input.mss-name-input:focus {
             outline: 2px solid #0d6efd;
+            border-color: #0d6efd;
+        }
+        .mss-name-pick-btn {
+            flex-shrink: 0;
+            width: 26px;
+            height: 26px;
+            border: 1px solid #adb5bd;
+            border-radius: 4px;
+            background: #fff;
+            color: #084298;
+            font-size: 12px;
+            font-weight: 700;
+            line-height: 1;
+            cursor: pointer;
+            padding: 0;
+        }
+        .mss-name-pick-btn:hover {
+            background: #e7f1ff;
             border-color: #0d6efd;
         }
         .mss-table {
@@ -731,6 +755,8 @@
             body { background: #fff; padding: 4px; overflow: visible; }
             .mss-header .mss-controls button:not(.print-btn),
             .mss-header .mss-controls a.mss-btn,
+            .mss-roster-input,
+            .mss-controls label[for="mssRosterInput"],
             .mss-rules,
             .mss-skills,
             .mss-hint { display: none !important; }
@@ -754,8 +780,10 @@
             <button type="button" class="mss-nav-btn" id="mssPrevDay" title="Previous day">◀</button>
             <input type="date" id="mssDate" />
             <button type="button" class="mss-nav-btn" id="mssNextDay" title="Next day">▶</button>
-            <button type="button" id="mssLoadBtn" title="Reload from calendar and keep your edits">Load</button>
-            <button type="button" class="secondary" id="mssRefreshBtn" title="Same as Load">Refresh</button>
+            <label for="mssRosterInput">Masseuses:</label>
+            <input type="text" id="mssRosterInput" class="mss-roster-input" placeholder="Type names in turn order, e.g. Casey, Jenny, Sophia" title="Type masseuse names in turn order, then click Load appointments" autocomplete="off" />
+            <button type="button" id="mssLoadBtn" title="Fetch this day's appointments and distribute them onto the names you typed">Load appointments</button>
+            <button type="button" class="secondary" id="mssRefreshBtn" title="Reload appointments and redistribute using the names on the sheet">Refresh</button>
             <button type="button" class="warn-btn" id="mssClearEditsBtn" title="Clear local edits for this date">Clear edits</button>
             <button type="button" class="secondary" id="mssSkillsBtn" title="Facial / trigger / cupping / part-time lists">Skills</button>
             <button type="button" class="secondary" id="mssAddMasseuseBtn" title="Add an extra masseuse block (may need scroll)">+ Masseuse</button>
@@ -763,7 +791,7 @@
         </div>
     </div>
 
-    <div id="mssStatus" class="mss-status">Pick a date and click Load.</div>
+    <div id="mssStatus" class="mss-status">Type masseuse names, then click Load appointments.</div>
 
     <div class="mss-skills-panel" id="mssSkillsPanel" hidden>
         <div class="mss-skills-panel-title">Skills — comma-separated names (saved forever on this computer)</div>
@@ -796,7 +824,7 @@
             </div>
             <div class="mss-grid" id="mssGrid"></div>
             <div class="mss-grid-extra" id="mssGridExtra" hidden></div>
-            <p class="mss-hint">Green = in massage · 小工# rows under regular · Click name/NM to pick</p>
+            <p class="mss-hint">Type names (or ▾ pick) → Load appointments · Green = in massage · 小工# under regular · Click NM to pick customer</p>
         </div>
     </div>
 
@@ -831,7 +859,7 @@
         <div class="mss-modal-backdrop" id="mssNamePickerBackdrop"></div>
         <div class="mss-modal-dialog mss-picker-dialog" role="dialog" aria-modal="true" aria-labelledby="mssNamePickerTitle">
             <h2 id="mssNamePickerTitle">Choose masseuse</h2>
-            <p class="mss-picker-hint">White = working today · Gray = not working · pick someone already on the sheet to swap</p>
+            <p class="mss-picker-hint">Type a name on the card, or pick here. White = working today · Gray = not working · pick someone already on the sheet to swap</p>
             <div id="mssNamePickerList" class="mss-picker-list"></div>
             <div class="mss-picker-actions">
                 <button type="button" id="mssNamePickerCloseBtn">Cancel</button>
@@ -839,6 +867,6 @@
         </div>
     </div>
 
-    <script src="/static/masseuse_scheduling_sheet.js?v=42"></script>
+    <script src="/static/masseuse_scheduling_sheet.js?v=44"></script>
 </body>
 </html>

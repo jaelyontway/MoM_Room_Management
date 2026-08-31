@@ -3046,14 +3046,6 @@ table.availability-audit-table tbody tr:nth-child(even) {
     filter: brightness(1.03);
 }
 
-/* Check-in / Checkout UI removed from dashboard (panels/button kept in DOM for JS) */
-#checkinCheckoutBtn,
-#checkinPanel,
-#checkoutPanel,
-.checkin-checkout-panel {
-    display: none !important;
-}
-
 /* Check-in / Checkout side panels */
 /* Header: Check-In / Check-Out — centered column, soft gradient */
 button.checkin-checkout-btn {

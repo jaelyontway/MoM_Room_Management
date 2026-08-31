@@ -6,7 +6,7 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="theme-color" content="#007bff">
     <title>Spa Room Management Dashboard</title>
-    <link rel="stylesheet" href="/static/style.css?v=167">
+    <link rel="stylesheet" href="/static/style.css?v=168">
 </head>
 <body>
     <div class="container">
@@ -56,8 +56,7 @@
                             </select>
                         </div>
                     </div>
-                    <!-- Check-In / Check-Out top control removed from UI (panels kept in DOM for JS safety) -->
-                    <button type="button" id="checkinCheckoutBtn" class="checkin-checkout-btn" hidden aria-hidden="true" tabindex="-1" aria-expanded="false" aria-controls="checkinPanel checkoutPanel" style="display: none !important;">
+                    <button type="button" id="checkinCheckoutBtn" class="checkin-checkout-btn" aria-expanded="false" aria-controls="checkinPanel checkoutPanel" data-i18n-title="btn.checkinCheckoutTitle" title="Show or hide check-in and checkout panels">
                         <span class="checkin-checkout-label checkin-checkout-label--desktop" data-i18n-html="btn.checkinCheckout">Check-In<br>Check-Out</span>
                         <span class="checkin-checkout-label checkin-checkout-label--mobile" data-i18n-html="btn.checkinCheckout">Check-In<br>Check-Out</span>
                     </button>
@@ -621,7 +620,7 @@
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
-    <script src="/static/i18n.js?v=65"></script>
-    <script src="/static/app.js?v=178"></script>
+    <script src="/static/i18n.js?v=66"></script>
+    <script src="/static/app.js?v=181"></script>
 </body>
 </html>

@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+.git/
+.env
+*.db
+debugging/
+calendar_screenshots/
+appt records/
+*.pdf
+*.lnk
+*.md

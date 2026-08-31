@@ -11,6 +11,8 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 
+from app.room_constants import PHYSICAL_ROOM_KEYS
+
 
 def _parse_iso_to_ts(iso: str) -> float:
     s = iso.replace("Z", "+00:00") if iso.endswith("Z") else iso
@@ -93,7 +95,7 @@ def is_couple_facial_with_massage(
 
 # Couple rooms where “one client facial only” split is supported (calendar + occupancy).
 _COUPLE_SPLIT_ROOMS = frozenset({"02D", "5", "6"})
-_PHYSICAL_ROOM_IDS = frozenset({"0", "1", "2", "3", "4", "5", "6"})
+_PHYSICAL_ROOM_IDS = frozenset(PHYSICAL_ROOM_KEYS)
 
 
 def _couple_single_facial_split_bounds(booking: Dict, ov: Optional[Any]) -> Optional[Tuple[float, float, float]]:

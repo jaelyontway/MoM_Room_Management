@@ -25,6 +25,8 @@
     };
 
     let skills = loadSkills();
+    let rosterInputDirty = false;
+    let prefetchGen = 0;
 
     let state = {
         date: '',
@@ -981,10 +983,18 @@
         return String(m);
     }
 
+    function serviceSegmentText(ev) {
+        return ((ev && ev.service_segments) || [])
+            .map((s) => String((s && s.name) || ''))
+            .filter(Boolean)
+            .join(' ');
+    }
+
     function eventBlob(ev) {
         return [
             ev.display_service,
             ev.service,
+            serviceSegmentText(ev),
             ev.package_type,
             ev.addon_note,
             ev.seller_note,
@@ -1589,9 +1599,9 @@
     }
 
     /**
-     * Rule 21: roster size = working masseuses (or custom list after delete / name pick).
+     * Rule 21: roster size = names you typed (or custom list after delete / name pick).
      * Rule 23: no duplicate names.
-     * First open: Mon–Thu 6 cards / Fri–Sun 9 (calendar names fill what they can; rest empty for manual pick).
+     * First open: Mon–Thu 6 empty cards / Fri–Sun 9. Calendar does not fill names.
      */
     function orderedRoster(data, extraCount) {
         const edits = state.edits || {};
@@ -1603,9 +1613,7 @@
         }
 
         const defaultN = defaultSlotCountForDate(state.date || getTodayLocal());
-        names = calendarRosterNames(data);
-        if (names.length > defaultN) names = names.slice(0, defaultN);
-        while (names.length < defaultN) names.push('');
+        names = Array.from({ length: defaultN }, () => '');
         const total = defaultN + Math.max(0, extraCount || 0);
         names = mergeNamesOntoRoster(names, edits);
         while (names.length < total) names.push('');
@@ -1820,9 +1828,11 @@
             if (forceRequest) {
                 let idx = findRosterIndex(preferredName);
                 if (idx >= 0) {
-                    if (!busyAt(idx, start, end)) {
+                    /* Rule 9/10: named request cannot override facial / trigger skill */
+                    const lacksSkill =
+                        skillIdxs && skillIdxs.length && skillIdxs.indexOf(idx) < 0;
+                    if (!lacksSkill && !busyAt(idx, start, end)) {
                         const warn =
-                            (skillIdxs && skillIdxs.length && skillIdxs.indexOf(idx) < 0) ||
                             (needsFacialOrLymphatic(ev) &&
                                 !(opts && opts.ignoreSkills) &&
                                 !nameInList(roster[idx], skills.facial || [])) ||
@@ -1906,6 +1916,72 @@
             if (/facial\s*w\s*90/.test(b)) return true;
             if (/relax\s*package/.test(b) && /facial/.test(b)) return true;
             return false;
+        }
+
+        /** Standalone facial / lymphatic (not a same-booking massage combo). */
+        function isFacialOnlyService(ev) {
+            if (!needsFacialOrLymphatic(ev)) return false;
+            if (isLuxuryPackage(ev) || isMassageFacialCombo(ev)) return false;
+            const b = eventBlob(ev);
+            if (/\bmassag/.test(b) && /\bfacial\b/.test(b)) return false;
+            return true;
+        }
+
+        function isMassageLikeService(ev) {
+            if (!ev || isFacialOnlyService(ev)) return false;
+            const b = eventBlob(ev);
+            if (/\bfacial\b/.test(b) && !/\bmassag/.test(b)) return false;
+            return (
+                /\bmassag/.test(b) ||
+                /\bdeep\s*tissue\b/.test(b) ||
+                /\bswedish\b/.test(b) ||
+                /\btrigger\s*point\b/.test(b)
+            );
+        }
+
+        function sameSheetCustomer(a, b) {
+            if (!a || !b) return false;
+            const ida = String(a.customer_id || '').trim();
+            const idb = String(b.customer_id || '').trim();
+            if (ida && idb) return ida === idb;
+            return (
+                String(a.customer || '')
+                    .trim()
+                    .toLowerCase() ===
+                String(b.customer || '')
+                    .trim()
+                    .toLowerCase()
+            );
+        }
+
+        function findOverlappingSibling(ev, pred) {
+            const start = parseIso(ev && ev.start_at);
+            const end = parseIso(ev && (ev.display_end_at || ev.end_at));
+            if (!start || !end) return null;
+            for (const other of events) {
+                if (!other || other === ev) continue;
+                if (String(other.booking_id || '') === String(ev.booking_id || '')) continue;
+                if (!sameSheetCustomer(ev, other)) continue;
+                const os = parseIso(other.start_at);
+                const oe = parseIso(other.display_end_at || other.end_at);
+                if (!os || !oe) continue;
+                if (!rangesOverlap(start, end, os, oe)) continue;
+                if (pred(other)) return other;
+            }
+            return null;
+        }
+
+        function bookingRequestNames(ev) {
+            if (!ev) return [];
+            const noteNames = masseuseNamesFromStaffNote(ev);
+            if (noteNames.length) return noteNames.slice();
+            if (isAnyAvailableForSheet(ev)) return [];
+            let names = (reqByBid.get(String(ev.booking_id || '')) || []).slice();
+            if (!names.length) {
+                const n = String(ev.original_therapist || ev.therapist || '').trim();
+                if (n && n.toLowerCase() !== 'staff') names = [n];
+            }
+            return names;
         }
 
         /** Staff note names e.g. "Rose Vicky" → ordered roster matches. */
@@ -2025,6 +2101,64 @@
                 assigned.has(lockKey(ev.booking_id, 2))
             ) {
                 continue;
+            }
+
+            /*
+             * Same customer, overlapping facial + massage booked as two Square singles
+             * (e.g. Arti: Basic Facial + Deep Tissue). Facial → Tina/Lynn; if the facial
+             * was named to someone who cannot do facial, that person takes the massage.
+             */
+            if (!isCouple) {
+                const pairFacial = isFacialOnlyService(ev)
+                    ? ev
+                    : isMassageLikeService(ev)
+                      ? findOverlappingSibling(ev, isFacialOnlyService)
+                      : null;
+                const pairMassage = isMassageLikeService(ev)
+                    ? ev
+                    : isFacialOnlyService(ev)
+                      ? findOverlappingSibling(ev, isMassageLikeService)
+                      : null;
+                if (
+                    pairFacial &&
+                    pairMassage &&
+                    !assigned.has(lockKey(pairFacial.booking_id, 1)) &&
+                    !assigned.has(lockKey(pairMassage.booking_id, 1))
+                ) {
+                    const facialIdxs = (skills.facial || [])
+                        .map(findRosterIndex)
+                        .filter((i) => i >= 0);
+                    const fStart = parseIso(pairFacial.start_at);
+                    const fEnd = parseIso(pairFacial.display_end_at || pairFacial.end_at);
+                    let fi =
+                        fStart && fEnd
+                            ? facialIdxs.find((i) => !busyAt(i, fStart, fEnd))
+                            : facialIdxs[0];
+                    if (fi == null) fi = facialIdxs[0];
+                    const facialName = fi != null && fi >= 0 ? roster[fi] : '';
+                    const facialReq = bookingRequestNames(pairFacial);
+                    const massageReq = bookingRequestNames(pairMassage);
+                    let massageName = '';
+                    let massageForce = false;
+                    for (const n of facialReq) {
+                        if (n && !nameInList(n, skills.facial || [])) {
+                            massageName = n;
+                            massageForce = true;
+                            break;
+                        }
+                    }
+                    if (!massageName && massageReq.length) {
+                        massageName = massageReq[0];
+                        massageForce = true;
+                    }
+                    if (facialName) {
+                        assignOne(pairFacial, facialName, 1, true);
+                    } else {
+                        assignOne(pairFacial, facialReq[0] || '', 1, facialReq.length > 0);
+                    }
+                    assignOne(pairMassage, massageName, 1, massageForce);
+                    continue;
+                }
             }
 
             /*
@@ -2986,46 +3120,34 @@
         num.textContent = '#' + (slotIdx + 1);
         const nameInput = document.createElement('input');
         nameInput.type = 'text';
-        nameInput.className = 'mss-name-input mss-nm-clickable';
-        nameInput.placeholder = 'Select masseuse';
+        nameInput.className = 'mss-name-input';
+        nameInput.placeholder = 'Type name';
         nameInput.value = slot.name || '';
-        nameInput.title = 'Click to choose masseuse (working = white · not working = gray)';
-        nameInput.readOnly = true;
+        nameInput.title = 'Type a masseuse name, or click ▾ to pick from Square';
+        nameInput.autocomplete = 'off';
         if (state.edits.names[String(slotIdx)] != null) nameInput.classList.add('edited');
-        nameInput.addEventListener('click', () => openMasseuseNamePicker(slotIdx));
-        nameInput.addEventListener('dblclick', (e) => {
-            e.preventDefault();
-            nameInput.readOnly = false;
-            /* Edit starts empty — type or pick; blur restores if left blank */
-            nameInput.dataset.prevName = nameInput.value || '';
-            nameInput.value = '';
-            nameInput.focus();
-        });
-        nameInput.addEventListener('blur', () => {
-            if (!String(nameInput.value || '').trim() && nameInput.dataset.prevName) {
-                nameInput.value = nameInput.dataset.prevName;
+        nameInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                nameInput.blur();
             }
-            nameInput.readOnly = true;
         });
         nameInput.addEventListener('change', () => {
-            const next = String(nameInput.value || '').trim();
-            const result = applyMasseuseNameWithSwap(slotIdx, next);
-            nameInput.classList.add('edited');
-            state.edits.rows = {};
-            persistFullSheet();
-            if (result.swapped) {
-                setStatus(
-                    'Swapped ' +
-                        (firstName(result.prev) || '—') +
-                        ' ↔ ' +
-                        (firstName(result.next) || '—')
-                );
-            }
-            scheduleRebuildAfterNameChange();
-            nameInput.readOnly = true;
+            applyTypedMasseuseName(slotIdx, nameInput);
         });
         title.appendChild(num);
         title.appendChild(nameInput);
+        const pickBtn = document.createElement('button');
+        pickBtn.type = 'button';
+        pickBtn.className = 'mss-name-pick-btn';
+        pickBtn.textContent = '▾';
+        pickBtn.title = 'Pick from Square roster (white = working today)';
+        pickBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            openMasseuseNamePicker(slotIdx);
+        });
+        title.appendChild(pickBtn);
 
         /* # + −  |  小工 + −  — separate add/delete for each kind */
         title.appendChild(
@@ -3280,6 +3402,144 @@
         return wrap;
     }
 
+    function makeEmptyRows() {
+        return Array.from({ length: ROWS_DEFAULT }, () => ({
+            nm: '',
+            rm: '',
+            dur: '',
+            price: '',
+            tip: '',
+            note: '',
+            requested: false,
+            skillWarn: false,
+            empty: true,
+        }));
+    }
+
+    function makeEmptySlot(name) {
+        return {
+            name: String(name || '').trim(),
+            rows: makeEmptyRows(),
+            xgJobs: [],
+            extra: false,
+        };
+    }
+
+    function sheetHasDistributedRows() {
+        return (state.slots || []).some((s) =>
+            (s.rows || []).some((r) => r && !r.empty && (r.nm || r._bid))
+        );
+    }
+
+    function rosterHasNames(list) {
+        return (list || []).some((n) => String(n || '').trim());
+    }
+
+    function cardNamesFromDom() {
+        const live = [];
+        document.querySelectorAll('#mssGrid .mss-name-input, #mssGridExtra .mss-name-input').forEach((inp) => {
+            live.push(String(inp.value || '').trim());
+        });
+        return live;
+    }
+
+    function collectTypedRosterFromUi() {
+        const bulk = parseNameList(document.getElementById('mssRosterInput')?.value);
+        const dirty = rosterInputDirty;
+        rosterInputDirty = false;
+        if (dirty && bulk.length) return bulk;
+        const live = cardNamesFromDom();
+        if (live.some(Boolean)) return live;
+        if (bulk.length) return bulk;
+        return null;
+    }
+
+    function syncRosterInputFromState() {
+        const el = document.getElementById('mssRosterInput');
+        if (!el) return;
+        if (document.activeElement === el) return;
+        if (rosterInputDirty) return;
+        const roster = state.edits.roster || (state.slots || []).map((s) => (s && s.name) || '');
+        el.value = (roster || [])
+            .map((n) => String(n || '').trim())
+            .filter(Boolean)
+            .join(', ');
+    }
+
+    async function prefetchDayForPicker(date) {
+        const gen = ++prefetchGen;
+        try {
+            const res = await fetch('/api/day?date=' + encodeURIComponent(date) + '&fast=1');
+            if (!res.ok) return;
+            const data = await res.json();
+            if (gen !== prefetchGen) return;
+            window._mssData = data;
+        } catch (e) {
+            /* picker can stay empty until Load */
+        }
+    }
+
+    function showEmptySheet(date, opts) {
+        const d = date || getTodayLocal();
+        state.date = d;
+        const defaultN = defaultSlotCountForDate(d);
+        let roster = Array.isArray(state.edits.roster) ? state.edits.roster.slice() : [];
+        if (!roster.length) {
+            roster = Array.from({ length: defaultN }, () => '');
+            state.edits.roster = roster.slice();
+        }
+        state.baseCount = Math.max(1, roster.length);
+        state.slots = roster.map((name) => makeEmptySlot(name));
+        renderSheet();
+        syncRosterInputFromState();
+        if (!(opts && opts.keepStatus)) {
+            setStatus('Type masseuse names in turn order, then click Load appointments.');
+        }
+        void prefetchDayForPicker(d);
+    }
+
+    function openDate(date) {
+        const input = document.getElementById('mssDate');
+        const d = date || (input && input.value) || getTodayLocal();
+        if (input) input.value = d;
+        const url = new URL(window.location.href);
+        url.searchParams.set('date', d);
+        window.history.replaceState({}, '', url);
+        state.date = d;
+        state.edits = loadEdits(d);
+        if (rosterHasNames(state.edits.roster)) {
+            loadSheet();
+        } else {
+            showEmptySheet(d);
+        }
+    }
+
+    function maybeRebuildAfterRosterChange() {
+        persistFullSheet();
+        if (sheetHasDistributedRows()) {
+            syncRosterInputFromState();
+            scheduleRebuildAfterNameChange();
+            return;
+        }
+        showEmptySheet(state.date, { keepStatus: true });
+        setStatus('Name saved. Click Load appointments to distribute.');
+    }
+
+    function applyTypedMasseuseName(slotIdx, nameInput) {
+        const next = String((nameInput && nameInput.value) || '').trim();
+        const result = applyMasseuseNameWithSwap(slotIdx, next);
+        if (nameInput) nameInput.classList.add('edited');
+        if (result.swapped) {
+            setStatus(
+                'Swapped ' +
+                    (firstName(result.prev) || '—') +
+                    ' ↔ ' +
+                    (firstName(result.next) || '—')
+            );
+        }
+        maybeRebuildAfterRosterChange();
+    }
+
     function renderSheet() {
         const sheet = document.getElementById('mssSheet');
         const grid = document.getElementById('mssGrid');
@@ -3310,9 +3570,12 @@
             fitSheetToViewport();
             requestAnimationFrame(fitSheetToViewport);
         });
+        syncRosterInputFromState();
     }
 
-    async function loadSheet() {
+    async function loadSheet(opts) {
+        const useTyped = opts && opts.useTypedRoster;
+        prefetchGen += 1;
         const input = document.getElementById('mssDate');
         const date = (input && input.value) || getTodayLocal();
         if (input) input.value = date;
@@ -3320,11 +3583,26 @@
         url.searchParams.set('date', date);
         window.history.replaceState({}, '', url);
 
+        const bulkReplace = useTyped && rosterInputDirty;
+        const typedRoster = useTyped ? collectTypedRosterFromUi() : null;
+
         state.date = date;
         const prevSlots = state.slots || [];
         state.edits = loadEdits(date);
 
-        setStatus('Loading schedule for ' + date + '…');
+        if (typedRoster && rosterHasNames(typedRoster)) {
+            commitRoster(typedRoster);
+        }
+        if (bulkReplace) {
+            clearAssignmentLocksForRedistribute();
+        }
+        if (!rosterHasNames(state.edits.roster)) {
+            setStatus('Type masseuse names first, then click Load appointments.', true);
+            showEmptySheet(date, { keepStatus: true });
+            return;
+        }
+
+        setStatus('Loading appointments for ' + date + '…');
         try {
             /* Parallel: disk roster/locks + Square day (fast=1 skips per-therapist booking merge) */
             const [recRes, dayRes] = await Promise.all([
@@ -3402,6 +3680,7 @@
             state.slots = slots;
             persistFullSheet();
             renderSheet();
+            syncRosterInputFromState();
             const filled = slots.reduce(
                 (n, s) => n + s.rows.filter((r) => r.nm || r.rm || r.price).length,
                 0
@@ -3410,18 +3689,16 @@
             setStatus(
                 `Loaded ${date} · ${slots.filter((s) => s.name).length} named · ${filled} rows · ` +
                     (lockN ? lockN + ' pinned · ' : '') +
-                    'turn redistributed · saved to appt records'
+                    'distributed · saved to appt records'
             );
         } catch (e) {
             setStatus('Error: ' + (e.message || e), true);
-            const sheet = document.getElementById('mssSheet');
-            if (sheet) sheet.hidden = true;
         }
     }
 
     function clearEdits() {
         if (!state.date) return;
-        if (!confirm('Clear all local edits for ' + state.date + ' and reload from calendar?')) return;
+        if (!confirm('Clear names and appointments for ' + state.date + '? You can type names again, then Load appointments.')) return;
         const d = state.date;
         try {
             /* Wipe all legacy keys — otherwise Clear reloads old v4 roster and freezes empty cards */
@@ -3441,20 +3718,25 @@
             rowCounts: {},
             rowMeta: {},
         };
-        loadSheet();
+        rosterInputDirty = false;
+        const rosterEl = document.getElementById('mssRosterInput');
+        if (rosterEl) rosterEl.value = '';
+        showEmptySheet(d);
     }
 
     function addMasseuse() {
-        syncRosterFromSlots();
-        const roster = (state.edits.roster || []).slice();
+        const typed = collectTypedRosterFromUi();
+        const roster = (typed && typed.length ? typed.slice() : (state.edits.roster || []).slice());
         roster.push('');
-        state.edits.roster = roster;
+        commitRoster(roster);
         state.edits.extraCount = 0;
-        state.edits.names = {};
-        /* +/- count: past must not stay locked — full turn redistribute */
-        clearAssignmentLocksForRedistribute();
         persistFullSheet();
-        loadSheet();
+        if (sheetHasDistributedRows()) {
+            clearAssignmentLocksForRedistribute();
+            loadSheet();
+        } else {
+            showEmptySheet(state.date);
+        }
     }
 
     /**
@@ -3467,28 +3749,38 @@
             return;
         }
         const who = firstName(state.slots[slotIdx] && state.slots[slotIdx].name) || '#' + (slotIdx + 1);
-        if (!confirm('Remove ' + who + ' and redistribute appointments to the remaining masseuses?')) {
+        const distributed = sheetHasDistributedRows();
+        if (
+            !confirm(
+                distributed
+                    ? 'Remove ' + who + ' and redistribute appointments to the remaining masseuses?'
+                    : 'Remove ' + who + ' from the sheet?'
+            )
+        ) {
             return;
         }
-        syncRosterFromSlots();
-        const roster = (state.edits.roster || []).slice();
+        const live = cardNamesFromDom();
+        const roster = (live.length ? live : (state.edits.roster || []).slice());
         roster.splice(slotIdx, 1);
         const kept = dedupeRosterNames(roster);
-        state.edits.roster = kept;
-        state.edits.names = {};
+        commitRoster(kept.length ? kept : ['']);
         state.edits.cells = {};
         state.edits.extraCount = 0;
-        clearAssignmentLocksForRedistribute();
         persistFullSheet();
-        await loadSheet();
-        setStatus('已按新名单重分（含过去的预约）· ' + kept.length + ' 人');
+        if (distributed) {
+            clearAssignmentLocksForRedistribute();
+            await loadSheet();
+            setStatus('已按新名单重分（含过去的预约）· ' + kept.length + ' 人');
+        } else {
+            showEmptySheet(state.date);
+        }
     }
 
     function shiftDay(delta) {
         const input = document.getElementById('mssDate');
         if (!input) return;
         input.value = addDaysToDate(input.value || getTodayLocal(), delta);
-        loadSheet();
+        openDate(input.value);
     }
 
     function workingMasseuseNames() {
@@ -3542,7 +3834,6 @@
         const title = document.getElementById('mssNamePickerTitle');
         if (!modal || !list) return;
         if (title) title.textContent = 'Choose masseuse · #' + (slotIdx + 1);
-        /* Open empty — do not pre-fill current therapist */
         const card = document.querySelector('.mss-card[data-slot="' + slotIdx + '"]');
         const nameInput = card && card.querySelector('.mss-name-input');
         const currentName =
@@ -3550,10 +3841,6 @@
             (state.slots[slotIdx] && state.slots[slotIdx].name) ||
             '';
         state.namePickerPrevName = String(currentName || '').trim();
-        if (nameInput) {
-            nameInput.value = '';
-            nameInput.placeholder = 'Select masseuse';
-        }
         const working = workingMasseuseNames();
         const all = allMasseuseNames();
         list.innerHTML = '';
@@ -3587,7 +3874,7 @@
                         setStatus('已更新按摩师 · 按新顺序重分（含过去）');
                     }
                     hideMasseuseNamePicker({ picked: true });
-                    scheduleRebuildAfterNameChange();
+                    maybeRebuildAfterRosterChange();
                 });
                 list.appendChild(btn);
             });
@@ -3596,6 +3883,12 @@
         const notWork = all.filter((n) => !workSet.some((w) => namesMatch(w, n)));
         addSection('Working today', workSet, 'mss-working');
         addSection('Not working today', notWork, 'mss-not-working');
+        if (!workSet.length && !notWork.length) {
+            const empty = document.createElement('div');
+            empty.className = 'mss-name-picker-section';
+            empty.textContent = 'No Square names yet — type the name, or click Load appointments first';
+            list.appendChild(empty);
+        }
         modal.hidden = false;
     }
 
@@ -3624,7 +3917,9 @@
         const ok = await saveSkills();
         if (reload) {
             setStatus(ok ? 'Skills saved forever — reloading sheet…' : 'Skills saved in this browser only (server save failed) — reloading…');
-            loadSheet();
+            if (rosterHasNames(state.edits.roster) || sheetHasDistributedRows()) {
+                loadSheet();
+            }
         } else {
             setStatus(ok ? 'Skills saved forever' : 'Skills saved in this browser only (server save failed)');
         }
@@ -3640,11 +3935,23 @@
         if (input) input.value = getDateFromQuery();
         document.getElementById('mssLoadBtn')?.addEventListener('click', () => {
             persistFullSheet();
-            loadSheet();
+            loadSheet({ useTypedRoster: true });
         });
         document.getElementById('mssRefreshBtn')?.addEventListener('click', () => {
             persistFullSheet();
-            loadSheet();
+            loadSheet({ useTypedRoster: true });
+        });
+        const rosterEl = document.getElementById('mssRosterInput');
+        rosterEl?.addEventListener('input', () => {
+            rosterInputDirty = true;
+        });
+        rosterEl?.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                rosterInputDirty = true;
+                persistFullSheet();
+                loadSheet({ useTypedRoster: true });
+            }
         });
         document.getElementById('mssPrevDay')?.addEventListener('click', () => {
             persistFullSheet();
@@ -3679,7 +3986,9 @@
             const ok = await saveSkills();
             fillSkillsForm();
             setStatus(ok ? 'Skills reset to defaults (saved forever)' : 'Skills reset (browser only)');
-            loadSheet();
+            if (rosterHasNames(state.edits.roster) || sheetHasDistributedRows()) {
+                loadSheet();
+            }
         });
         /* Auto-save when leaving a skills field (no reload); Save button reloads sheet */
         ['mssSkillFacial', 'mssSkillTrigger', 'mssSkillCupping', 'mssSkillManual'].forEach((id) => {
@@ -3702,7 +4011,7 @@
         });
         input?.addEventListener('change', () => {
             persistFullSheet();
-            loadSheet();
+            openDate(input.value);
         });
         window.addEventListener('resize', () => fitSheetToViewport());
         window.addEventListener('beforeunload', () => persistFullSheet());
@@ -3717,7 +4026,7 @@
             }
         }, 60000);
         await hydrateSkillsFromServer();
-        loadSheet();
+        openDate(input?.value || getTodayLocal());
     }
 
     if (document.readyState === 'loading') {

@@ -5,7 +5,8 @@ from typing import Optional
 from dotenv import load_dotenv
 
 # Square test / placeholder profiles (exact calendar display name, case-insensitive): hidden from calendar and headcounts.
-_EXCLUDED_TEST_CUSTOMER_DISPLAY_NAMES_NORMALIZED = frozenset({"rich bernstein"})
+# "auto block" is the shared placeholder customer used by couple_autoblock (second-therapist blocks).
+_EXCLUDED_TEST_CUSTOMER_DISPLAY_NAMES_NORMALIZED = frozenset({"rich bernstein", "auto block"})
 
 
 def customer_display_excluded_from_calendar_and_counts(customer_name: Optional[str]) -> bool:
@@ -37,6 +38,22 @@ class Config:
     # Webhook Configuration
     WEBHOOK_SECRET = os.getenv('WEBHOOK_SECRET', '')
     WEBHOOK_PORT = int(os.getenv('WEBHOOK_PORT', '5000'))
+
+    # Couple autoblock: auto-create a Square placeholder booking for the second therapist of a couples massage
+    # (replaces the manual "personal event" the front desk used to create). Dry-run is ON by default:
+    # the poller logs/reports what it WOULD create but never writes to Square until you set
+    # COUPLE_AUTOBLOCK_DRY_RUN=false in .env.
+    COUPLE_AUTOBLOCK_ENABLED = os.getenv('COUPLE_AUTOBLOCK_ENABLED', 'true').strip().lower() in ('1', 'true', 'yes')
+    COUPLE_AUTOBLOCK_DRY_RUN = os.getenv('COUPLE_AUTOBLOCK_DRY_RUN', 'true').strip().lower() in ('1', 'true', 'yes')
+    COUPLE_AUTOBLOCK_POLL_MINUTES = int(os.getenv('COUPLE_AUTOBLOCK_POLL_MINUTES', '5'))
+    COUPLE_AUTOBLOCK_LOOKAHEAD_DAYS = int(os.getenv('COUPLE_AUTOBLOCK_LOOKAHEAD_DAYS', '7'))
+    # Marker prefix written into the placeholder booking's seller_note; also used to recognize our own blocks.
+    COUPLE_AUTOBLOCK_MARKER = os.getenv('COUPLE_AUTOBLOCK_MARKER', 'AUTO-BLOCK:').strip()
+    # Display name of the shared placeholder customer shown on the Square calendar tile.
+    COUPLE_AUTOBLOCK_CUSTOMER_GIVEN_NAME = os.getenv('COUPLE_AUTOBLOCK_CUSTOMER_GIVEN_NAME', 'AUTO').strip()
+    COUPLE_AUTOBLOCK_CUSTOMER_FAMILY_NAME = os.getenv('COUPLE_AUTOBLOCK_CUSTOMER_FAMILY_NAME', 'BLOCK').strip()
+    # Optional: pin the placeholder customer's Square ID to skip the search/create step.
+    COUPLE_AUTOBLOCK_CUSTOMER_ID = os.getenv('COUPLE_AUTOBLOCK_CUSTOMER_ID', '').strip()
     
     # Service Configuration
     COUPLES_MASSAGE_SERVICE_ID = os.getenv('COUPLES_MASSAGE_SERVICE_ID', '')

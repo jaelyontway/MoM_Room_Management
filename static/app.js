@@ -357,18 +357,19 @@ function setCheckoutDone(dateStr, bookingId, done) {
 function getCheckoutServicesPaidKey(dateStr, bookingId) {
     return CHECKOUT_SERVICES_PAID_KEY_PREFIX + dateStr + '_' + (bookingId || '');
 }
-function isCheckoutServicesPaid(dateStr, bookingId) {
+function isCheckoutServicesPaid(dateStr, bookingId, ev) {
     try {
-        return sessionStorage.getItem(getCheckoutServicesPaidKey(dateStr, bookingId)) === '1';
-    } catch (e) {
-        return false;
-    }
+        const raw = sessionStorage.getItem(getCheckoutServicesPaidKey(dateStr, bookingId));
+        if (raw === '1') return true;
+        if (raw === '0') return false;
+    } catch (e) { /* ignore */ }
+    /* Online Square booking (customer) is prepaid — check Services paid unless staff unchecks. */
+    return customerBookedOnline(ev);
 }
 function setCheckoutServicesPaid(dateStr, bookingId, paid) {
     try {
         const key = getCheckoutServicesPaidKey(dateStr, bookingId);
-        if (paid) sessionStorage.setItem(key, '1');
-        else sessionStorage.removeItem(key);
+        sessionStorage.setItem(key, paid ? '1' : '0');
     } catch (e) { /* ignore */ }
 }
 
@@ -847,23 +848,8 @@ function inferAddonTimeNeutralMinutes(ev) {
     const displayService = String(ev.display_service || '');
     const noteBlob = [ev.addon_note, ev.customer_note, ev.seller_note].filter(Boolean).join(' ');
     const text = `${service} ${displayService} ${noteBlob}`.toLowerCase();
-    const catalogLower = `${service} ${displayService}`.toLowerCase();
-    const hasPainPhrase = text.includes('pain relief') || text.includes('pain-relief');
-    const hasPainCream = text.includes('cream') && (text.includes('pain') || text.includes('relief'));
-    const hasPain = hasPainPhrase || hasPainCream;
-    const hasAromaWord = text.includes('aromatherapy') || text.includes('aroma therapy');
-    const massageCtx = text.includes('massage') || text.includes('swedish') || text.includes('deep') || text.includes('tissue') || text.includes('couple');
-    const hasLavenderScent = text.includes('lavender') && massageCtx;
-    const massageCtxCatalog =
-        catalogLower.includes('massage') ||
-        catalogLower.includes('swedish') ||
-        catalogLower.includes('deep') ||
-        catalogLower.includes('tissue') ||
-        catalogLower.includes('couple');
-    const hasRoseScent = massageCtxCatalog && /\brose\b/i.test(catalogLower);
-    const hasAroma = hasAromaWord || hasLavenderScent || hasRoseScent;
-    if (hasPain && hasAroma) return 10;
-    if (hasPain || hasAroma) return 5;
+    /* Pain relief oil / aromatherapy are during the massage. Square end_at already omits those
+       add-on segments — do not subtract 5/10 just because the flag is indicated. */
     let durationMin = 0;
     try {
         const st = new Date(ev.start_at).getTime();
@@ -3684,7 +3670,7 @@ function momBuildPhoneCalendarCheckoutListInnerHtml(data) {
         const duration = escapeHtml(formatDurationMinutes(getDurationMinutes(ev)));
         const rm = escapeHtml(formatRoomForPanel(ev.room));
         const checkoutDone = dateStr ? isCheckoutDone(dateStr, ev.booking_id) : false;
-        const servicesPaidChecked = dateStr ? isCheckoutServicesPaid(dateStr, ev.booking_id) : false;
+        const servicesPaidChecked = dateStr ? isCheckoutServicesPaid(dateStr, ev.booking_id, ev) : customerBookedOnline(ev);
         const tipValNum = (ev.tip_amount != null && ev.tip_amount_2 != null)
             ? (Number(ev.tip_amount) + Number(ev.tip_amount_2))
             : (ev.tip_amount != null ? Number(ev.tip_amount) : NaN);
@@ -11398,7 +11384,7 @@ function renderCheckoutPanelList(timeStr) {
         const opts1 = therapistOptionsFor(therapists, curCk1, massageAvailOrderedCk);
         const opts2 = therapistOptionsFor(therapists, curCk2, massageAvailOrderedCk);
         const checkoutDone = isCheckoutDone(dateStr, ev.booking_id);
-        const servicesPaidChecked = isCheckoutServicesPaid(dateStr, ev.booking_id);
+        const servicesPaidChecked = isCheckoutServicesPaid(dateStr, ev.booking_id, ev);
         const minFirst = ev.split_minutes_first != null ? Number(ev.split_minutes_first) : (durationMin ? Math.floor(durationMin / 2) : 30);
         let srmBlock;
         let tipRowSrm1Html = '';
@@ -11684,14 +11670,37 @@ function bindCheckinCheckoutPanelDrag(panel) {
 }
 
 function openCheckinCheckoutPanels() {
-    /* Check-In / Check-Out panels removed from UI */
-    closeCheckinCheckoutPanels();
+    resetCheckinCheckoutPanelPositions();
+    const dateStr = document.getElementById('dateInput')?.value;
+    const today = getTodayLocal();
+    let nextCheckin;
+    let nextCheckout;
+    if (dateStr && dateStr === today) {
+        const slot = getLocalNowCheckinCheckoutSlotValue();
+        nextCheckin = slot;
+        nextCheckout = slot;
+    } else {
+        ({ nextCheckin, nextCheckout } = getNextCheckinCheckoutTimes());
+    }
+    if (isCheckinCheckoutTimeSyncOn()) {
+        const slot = nextCheckin || nextCheckout;
+        showCheckinPanel(slot);
+        showCheckoutPanel(slot);
+    } else {
+        showCheckinPanel(nextCheckin);
+        showCheckoutPanel(nextCheckout);
+    }
+    scheduleCheckoutPopupWhenDue();
+    syncCheckinCheckoutToggleButton();
 }
 
 /** Toolbar button: open both panels, or close both if either is already open. */
 function toggleCheckinCheckoutPanels() {
-    /* Check-In / Check-Out panels removed from UI */
-    closeCheckinCheckoutPanels();
+    if (checkinCheckoutPanelsAreOpen()) {
+        closeCheckinCheckoutPanels();
+    } else {
+        openCheckinCheckoutPanels();
+    }
 }
 
 /** True if focus is on an input/select/textarea inside the panel (not chrome buttons like close). Avoids auto-refresh wiping in-progress typing. */
@@ -14543,7 +14552,7 @@ function createAppointmentBlock(appointment, timeSlot, _slotIndex, _allTimeSlots
     block.style.width = `calc(${position.width}% - ${marginGap * 2}px)`;
     block.style.zIndex = position.width < 100 ? '15' : '10'; // Higher z-index for side-by-side
 
-    // Format time (end shows service end — omit aromatherapy / pain relief oil minutes)
+    // Format time (end = massage end; pain relief oil indicated does not shorten the clock)
     const timeStr = formatTimeRangeSmart(startTime, displayEndTime);
     
     const roomLocked = appointment.room_locked === true;

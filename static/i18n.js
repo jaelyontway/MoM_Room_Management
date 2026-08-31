@@ -689,8 +689,8 @@
         'checkout.cash': { en: 'cash', zh: '现金' },
         'checkout.servicesPaidLabel': { en: 'Services paid', zh: '服务费已收' },
         'checkout.servicesPaidTitle': {
-            en: 'Service charges already settled (card/cash/Square). Uncheck if you still need to collect service payment; leave checked to focus on tip only.',
-            zh: '服务费用已结清（刷卡/现金/Square）。若仍需收服务费请取消勾选；勾选后前台可主要确认小费。',
+            en: 'Service charges already settled (card/cash/Square). Online bookings are checked automatically. Uncheck if you still need to collect service payment; leave checked to focus on tip only.',
+            zh: '服务费用已结清（刷卡/现金/Square）。网上预约会自动勾选。若仍需收服务费请取消勾选；勾选后前台可主要确认小费。',
         },
         'focus.openTitle': { en: 'Open focus popup', zh: '打开重点部位' },
         'focus.openAria': { en: 'Open focus area', zh: '打开重点部位' },

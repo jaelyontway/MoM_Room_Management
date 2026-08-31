@@ -399,6 +399,92 @@ class SquareBookingsClient:
             logger.error(f"Exception creating appointment booking: {e}")
             return None
 
+    def find_or_create_autoblock_customer(self):
+        """Return the Square customer_id of the shared 'AUTO BLOCK' placeholder customer.
+
+        Search by exact given+family name; create it if missing. Returns None if the
+        Customers API is unavailable or lacks permissions (caller falls back to no-customer booking).
+        """
+        if Config.COUPLE_AUTOBLOCK_CUSTOMER_ID:
+            return Config.COUPLE_AUTOBLOCK_CUSTOMER_ID
+        if not self.customers_api:
+            return None
+        given = Config.COUPLE_AUTOBLOCK_CUSTOMER_GIVEN_NAME
+        family = Config.COUPLE_AUTOBLOCK_CUSTOMER_FAMILY_NAME
+        try:
+            result = self.customers_api.search(
+                query={'filter': {'given_name': {'exact': given}, 'family_name': {'exact': family}}},
+                limit=1,
+            )
+            customers = getattr(result, 'customers', None)
+            if customers is None and hasattr(result, 'body') and isinstance(result.body, dict):
+                customers = result.body.get('customers')
+            for c in customers or []:
+                cid = c.get('id') if isinstance(c, dict) else getattr(c, 'id', None)
+                if cid:
+                    return cid
+        except Exception as e:
+            logger.warning('Autoblock customer search failed: %s', e)
+        try:
+            result = self.customers_api.create(
+                given_name=given,
+                family_name=family,
+                note='Placeholder customer for automatic couples-massage second-therapist blocks.',
+            )
+            customer = getattr(result, 'customer', None)
+            if customer is None and hasattr(result, 'body') and isinstance(result.body, dict):
+                customer = result.body.get('customer')
+            cid = customer.get('id') if isinstance(customer, dict) else getattr(customer, 'id', None)
+            if cid:
+                logger.info('Created autoblock placeholder customer %s', cid)
+                return cid
+        except Exception as e:
+            logger.warning('Autoblock customer create failed (CUSTOMERS_WRITE permission?): %s', e)
+        return None
+
+    def create_autoblock_booking(self, team_member_id: str, start_at: str,
+                                 service_variation_id: str, service_variation_version: int,
+                                 duration_minutes: int, seller_note: str,
+                                 customer_id: str = None):
+        """Create the second-therapist placeholder booking for a couples massage.
+
+        seller_note carries the AUTO-BLOCK marker + the real customer's first name so staff
+        can tell placeholders from real bookings, and so the poller can recognize its own blocks.
+        Returns the created booking (dict/object) or None.
+        """
+        try:
+            segment = {
+                'team_member_id': team_member_id,
+                'duration_minutes': duration_minutes,
+            }
+            if service_variation_id:
+                segment['service_variation_id'] = service_variation_id
+                segment['service_variation_version'] = service_variation_version or 1
+            booking_data = {
+                'location_id': Config.SQUARE_LOCATION_ID,
+                'start_at': start_at,
+                'status': 'ACCEPTED',
+                'appointment_segments': [segment],
+                'seller_note': seller_note,
+            }
+            if customer_id:
+                booking_data['customer_id'] = customer_id
+            result = self.bookings_api.create(booking=booking_data)
+            if hasattr(result, 'body') and isinstance(result.body, dict):
+                booking = result.body.get('booking')
+            elif hasattr(result, 'booking'):
+                booking = result.booking
+            else:
+                booking = None
+            if booking:
+                logger.info('Created autoblock booking for team member %s at %s', team_member_id, start_at)
+            else:
+                logger.error('Error creating autoblock booking: %s', result)
+            return booking
+        except Exception as e:
+            logger.error('Exception creating autoblock booking: %s', e)
+            return None
+
     def list_booking_services(self) -> list:
         """
         List catalog item variations that can be used for booking (service variation id, name, duration).
@@ -525,11 +611,29 @@ class SquareBookingsClient:
             logger.error(f"Exception retrieving team members: {e}")
             return []
     
+    @staticmethod
+    def _attr(obj, name, default=None):
+        """Field access that works for both dicts (old SDK) and Pydantic objects (new SDK)."""
+        if isinstance(obj, dict):
+            v = obj.get(name, default)
+        else:
+            v = getattr(obj, name, default)
+        if v is None:
+            return default
+        if hasattr(v, 'value') and not isinstance(v, (str, int, float, list, dict)):
+            return v.value  # enum (e.g. booking status)
+        return v
+
     def get_available_team_member(self, start_at: str, duration_minutes: int, 
-                                  exclude_team_member_id: str):
-        """Find an available team member for the given time slot."""
+                                  exclude_team_member_id: str,
+                                  exclude_team_member_ids=None):
+        """Find an available team member for the given time slot.
+
+        exclude_team_member_ids: optional extra IDs to skip (e.g. therapists already claimed
+        for an overlapping block earlier in the same poll pass).
+        """
         try:
-            from datetime import datetime, timedelta
+            from datetime import timedelta
             from dateutil import parser
             
             # Parse the start time
@@ -541,12 +645,13 @@ class SquareBookingsClient:
             
             # Filter to therapists if configured
             if Config.THERAPIST_IDS:
-                members = [m for m in all_members if m.get('id') in Config.THERAPIST_IDS]
+                members = [m for m in all_members if self._attr(m, 'id') in Config.THERAPIST_IDS]
             else:
                 members = all_members
             
-            # Exclude the already assigned therapist
-            members = [m for m in members if m.get('id') != exclude_team_member_id]
+            # Exclude the already assigned therapist and any caller-supplied exclusions
+            excluded = {exclude_team_member_id} | set(exclude_team_member_ids or [])
+            members = [m for m in members if self._attr(m, 'id') not in excluded]
             
             if not members:
                 logger.warning("No available therapists found")
@@ -554,28 +659,36 @@ class SquareBookingsClient:
             
             # Check availability for each member
             for member in members:
-                member_id = member.get('id')
+                member_id = self._attr(member, 'id')
                 
-                # Get existing bookings for this member in the time range
-                bookings = self.list_bookings(
-                    start_at_min=start_at,
-                    start_at_max=end_dt.isoformat(),
-                    team_member_id=member_id
-                )
+                # Get existing bookings for this member in the time range.
+                # Query directly (not via list_bookings) so an API error can be told apart from
+                # "no bookings": a member Square rejects (e.g. no appointments profile) must be
+                # skipped, not treated as free.
+                try:
+                    kw = dict(limit=100, start_at_min=start_at, start_at_max=end_dt.isoformat(),
+                              team_member_id=member_id)
+                    if getattr(Config, 'SQUARE_LOCATION_ID', None):
+                        kw['location_id'] = Config.SQUARE_LOCATION_ID
+                    bookings = list(self.bookings_api.list(**kw))
+                except Exception as e:
+                    logger.warning("Skipping team member %s: bookings lookup failed (%s)",
+                                   member_id, str(e)[:200])
+                    continue
                 
                 # Filter out cancelled bookings
                 active_bookings = [
                     b for b in bookings 
-                    if b.get('status') not in ['CANCELLED_BY_CUSTOMER', 'CANCELLED_BY_SELLER', 'DECLINED']
+                    if str(self._attr(b, 'status', '')) not in ['CANCELLED_BY_CUSTOMER', 'CANCELLED_BY_SELLER', 'DECLINED', 'NO_SHOW']
                 ]
                 
                 # Check if this member has any conflicts
                 has_conflict = False
                 for booking in active_bookings:
-                    booking_start = parser.parse(booking.get('start_at'))
-                    booking_end = booking_start + timedelta(
-                        minutes=booking.get('appointment_segments', [{}])[0].get('duration_minutes', 0)
-                    )
+                    booking_start = parser.parse(self._attr(booking, 'start_at'))
+                    segments = self._attr(booking, 'appointment_segments', None) or []
+                    seg_minutes = self._attr(segments[0], 'duration_minutes', 0) if segments else 0
+                    booking_end = booking_start + timedelta(minutes=seg_minutes or 0)
                     
                     # Check for overlap
                     if not (end_dt <= booking_start or start_dt >= booking_end):

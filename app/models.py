@@ -150,6 +150,27 @@ class CalendarScreenshot(Base):
     filename = Column(String, nullable=False)  # file name under calendar_screenshots/
 
 
+class CoupleSecondBlock(Base):
+    """Auto-created Square placeholder booking that blocks the second therapist for a couples massage.
+
+    Replaces the old in-memory mapping of booking_sync.py: persisted so restarts don't orphan blocks.
+    """
+
+    __tablename__ = "couple_second_blocks"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    primary_booking_id = Column(String, nullable=False, index=True)  # the real couples booking in Square
+    block_booking_id = Column(String, nullable=True, index=True)  # the placeholder booking we created
+    second_team_member_id = Column(String, nullable=False)
+    start_at = Column(String, nullable=False)  # RFC3339, mirrors primary at time of creation (reschedule detection)
+    duration_minutes = Column(Integer, nullable=False)
+    customer_first_name = Column(String, nullable=True)
+    status = Column(String, nullable=False, default="created")  # created | cancelled | error
+    last_error = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
 class CustomerHoursDailySnapshot(Base):
     """Frozen customers-hours stats per day (after overrides). Past days read from here; bump schema_version in code if formulas change."""
 

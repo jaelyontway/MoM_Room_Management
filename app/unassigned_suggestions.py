@@ -20,15 +20,13 @@ from dateutil import parser as du_parser
 
 
 
-# Match room_assigner boundary tolerance (avoid false overlaps on back-to-back bookings).
+# Shared with room_assigner / room_solver (single source of truth, incl. 2s tolerance).
 
-_MIN_OVERLAP_SEC = 2.0
-
-
-
-_COUPLE_ROOMS = ("5", "6", "02D")
-
-_SINGLE_ROOMS = ("1", "3", "4", "2", "0", "6", "5")
+from app.room_constants import (
+    COUPLE_PRIORITY as _COUPLE_ROOMS,
+    SINGLE_PRIORITY as _SINGLE_ROOMS,
+    intervals_overlap as _intervals_overlap,
+)
 
 _PHYSICAL_ROOMS = tuple(dict.fromkeys(list(_COUPLE_ROOMS) + list(_SINGLE_ROOMS)))
 
@@ -57,18 +55,6 @@ def _parse_iso_to_ts(iso: str) -> Optional[float]:
         except Exception:
 
             return None
-
-
-
-
-
-def _intervals_overlap(a0: float, a1: float, b0: float, b1: float) -> bool:
-
-    if a1 <= a0 or b1 <= b0:
-
-        return False
-
-    return (min(a1, b1) - max(a0, b0)) > _MIN_OVERLAP_SEC
 
 
 
